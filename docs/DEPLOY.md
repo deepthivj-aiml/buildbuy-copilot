@@ -1,9 +1,11 @@
 # BuildBuy Copilot — Deploy (free, $0)
 
-**Status: Deploy pending — no live link exists yet.** The demo link in the
-README is a placeholder until a deploy is actually done and smoke-tested.
-Do not present any URL as live until the steps below have been run and the
-smoke test in §4 passes.
+**Status: LIVE on Streamlit Community Cloud:**
+https://tu2tztzegjayuwzxudxbnv.streamlit.app/ — deployed from
+`deepthivj-aiml/buildbuy-copilot`, branch `master`, main file
+`frontend/app.py`, Python 3.12; verified live with sample inputs
+2026-11-10. Run the smoke test in §4 after any redeploy before
+sharing the link.
 
 ## 1. Free deploy plan — $0/month
 
@@ -30,7 +32,7 @@ Prerequisites: the repo is pushed to GitHub under `deepthivj-aiml`
 GitHub password), and `pytest` is green locally.
 
 1. Go to Streamlit Community Cloud and sign in with GitHub.
-2. **New app** → pick the repo, branch `main`, main file path
+2. **New app** → pick the repo, branch `master`, main file path
    `frontend/app.py`.
 3. **Advanced settings → Secrets**: add only what you have, as TOML:
    ```toml
