@@ -41,26 +41,21 @@ from demo_data import (  # noqa: E402
     DEMO_ACCURACY,
     DEMO_COST_PER_JOB,
     DEMO_EVAL_PASS,
-    DEMO_EVAL_RUNS,
     DEMO_GROUNDEDNESS,
     DEMO_LATENCY_P95,
     DEMO_MATERIALS,
     DEMO_METRICS_DAYS,
     DEMO_QA,
-    DEMO_RAW_EVENTS,
     DEMO_RETRIEVAL_TOP1,
     DEMO_SUPPLIERS,
-    DEMO_WORST_ANSWERS,
 )
 from accuracy import (  # noqa: E402
     ALERT_THRESHOLDS,
     METRIC_DEFS,
-    apply_worst_action,
     dashboard_is_empty,
     fetch_live_accuracy,
     format_value,
     metric_status,
-    worst_answers_from_feedback,
 )
 from helpers import (  # noqa: E402
     API_URL,
@@ -462,7 +457,7 @@ elif nav == "2 · Plan & Materials":
                             st.session_state["feedback"].append(
                                 {"question": msg.get("q", ""), "thumbs": "down",
                                  "reason": "wrong number / citation / couldn't read"})
-                            st.success("Thanks — this goes to the Worst Answers list.")
+                            st.success("Thanks — feedback recorded.")
         q = st.chat_input("Ask about the plan or specs…")
         if q:
             answer, region, clause, grounded = demo_answer(q)
@@ -1135,24 +1130,27 @@ elif nav == "5 · My Orders":
 # Tab 6 — Accuracy (observability dashboard)
 # ---------------------------------------------------------------------------
 elif nav == "6 · Accuracy":
-    st.header("Accuracy — is the copilot getting better or worse?")
-    st.caption("Observability dashboard: 8 separate metrics, never blended "
-               "into one score — a problem in one module cannot hide behind "
-               "another. All numbers are measured from logged events, or "
-               "labelled synthetic demo data. If there is not enough data "
-               "yet, the dashboard says “no data yet” instead of showing a "
-               "made-up percentage.")
+    st.header("Accuracy — observability dashboard")
+    st.caption("This tab only shows how the copilot is doing: 8 separate "
+               "metrics, never blended into one score — a problem in one "
+               "module cannot hide behind another. All numbers are measured "
+               "from logged events, or labelled synthetic demo data. If "
+               "there is not enough data yet, the dashboard says “no data "
+               "yet” instead of showing a made-up percentage. Evaluations "
+               "— eval runs, worst-answer review, raw-event checks — run "
+               "internally, in the backend, tests and CI. There is no fix "
+               "list and no evaluation action in this UI.")
     # Live data when the backend is up; labelled synthetic demo otherwise.
+    # The backend payload also carries worst_answers / eval_runs /
+    # raw_events for internal use — this tab deliberately does not read
+    # or render them.
     live_dash = fetch_live_accuracy() if LIVE else None
     if LIVE and live_dash is not None:
         dash = live_dash
         st.markdown('<span class="badge badge-live">● LIVE — measured from '
                     'metrics_daily + eval_runs + qa_log + observability_events'
                     '</span>', unsafe_allow_html=True)
-        worst = dash.get("worst_answers", [])
         trends = dash.get("trends", [])
-        eval_runs = dash.get("eval_runs", [])
-        raw_events = dash.get("raw_events", [])
         per_module = dash.get("per_module", [])
     else:
         dash = DEMO_ACCURACY
@@ -1164,11 +1162,6 @@ elif nav == "6 · Accuracy":
             st.caption("Source: synthetic demo metrics (labelled) — replace "
                        "with measured values from `metrics_daily` / "
                        "`eval_runs` when the backend is live.")
-        worst = worst_answers_from_feedback(
-            st.session_state["feedback"], DEMO_WORST_ANSWERS)
-        # Apply any demo Worst Answers actions taken this session.
-        for _qa, _act in st.session_state.get("worst_actions", {}).items():
-            worst = apply_worst_action(worst, _qa, _act)
         trends = [{"date": d, "groundedness": g / 100, "retrieval_top1": r / 100,
                    "eval_pass_rate": e / 100,
                    "cost_per_job_usd": c, "latency_p95_ms": int(p * 1000),
@@ -1176,30 +1169,22 @@ elif nav == "6 · Accuracy":
                   for d, g, r, e, c, p in zip(
                       DEMO_METRICS_DAYS, DEMO_GROUNDEDNESS, DEMO_RETRIEVAL_TOP1,
                       DEMO_EVAL_PASS, DEMO_COST_PER_JOB, DEMO_LATENCY_P95)]
-        eval_runs = DEMO_EVAL_RUNS
-        raw_events = DEMO_RAW_EVENTS
         per_module = [
             {"module": "Plan Q&A", "metric": "Groundedness",
-             "value": 0.96, "n": 48,
-             "worst": "2 ungrounded answers"},
+             "value": 0.96, "n": 48},
             {"module": "Retrieval (RAG)", "metric": "Retrieval top-1",
-             "value": 0.92, "n": 73,
-             "worst": "eval runs below the gate in Eval Run History"},
+             "value": 0.92, "n": 73},
             {"module": "Takeoff", "metric": "Mean error (MAPE)",
-             "value": None, "n": 0,
-             "worst": "no corrected lines recorded yet"},
+             "value": None, "n": 0},
             {"module": "Supplier ranking", "metric": "Chosen-was-#1",
-             "value": 0.67, "n": 12,
-             "worst": "orders where the chosen supplier was not ranked #1"},
+             "value": 0.67, "n": 12},
             {"module": "Buyer agent", "metric": "Approval-before-order",
-             "value": 1.0, "n": 12, "worst": "none"},
+             "value": 1.0, "n": 12},
             {"module": "Guardrails", "metric": "Block rate",
-             "value": 1.0, "n": 16,
-             "worst": "adversarial items that were NOT blocked"},
+             "value": 1.0, "n": 16},
             {"module": "Cache / cost", "metric": "Cache hit rate",
-             "value": 0.61, "n": 48, "worst": "p95 ask latency 7,200 ms"},
+             "value": 0.61, "n": 48},
         ]
-    st.session_state.setdefault("worst_actions", {})
 
     if st.button("Clear demo metrics (show the empty state)"):
         st.session_state["metrics_cleared"] = True
@@ -1237,8 +1222,6 @@ elif nav == "6 · Accuracy":
                 extra = (f" Quotes agreed: {m['agreement_rate'] * 100:.0f}% "
                          f"(shown separately, not blended into the invariant).")
             if m["key"] == "thumbs_up_rate":
-                nf = next((x for x in dash["metrics"]
-                           if x["key"] == "groundedness"), None)
                 extra = " “Not found” answers are counted separately, not as wrong answers."
             status_txt = {"ok": "✅ ok", "alert": "⚠ ALERT",
                           "no_data": "— no data yet"}[m.get("status", "no_data")]
@@ -1350,142 +1333,14 @@ elif nav == "6 · Accuracy":
         st.dataframe(pd.DataFrame([{
             "Module": r["module"], "Metric": r["metric"],
             "Value": format_value(r.get("value"), "rate"),
-            "n": r.get("n", 0), "Worst in 7 days": r.get("worst", ""),
+            "n": r.get("n", 0),
         } for r in per_module]), use_container_width=True, hide_index=True)
-        st.caption("One row per module. A module's worst item is named, not "
-                   "averaged away.")
+        st.caption("One row per module — the same metric, broken down by "
+                   "module. Evaluations run internally; this tab shows the "
+                   "dashboard only, with no fix list and no evaluation "
+                   "actions.")
 
-        # --- 5. Worst Answers (10 lowest) -------------------------------
-        st.subheader("Worst Answers — the fix list (10 lowest)")
-        st.caption("Lowest-scoring answers first: thumbs-down, then "
-                   "ungrounded. Each row has two actions — “Add to eval "
-                   "set” puts the labelled example into the regression set "
-                   "for the next eval run; “Mark fixed” records that the "
-                   "underlying problem is fixed. A row already acted on "
-                   "keeps its status and cannot be added twice.")
-        if not worst:
-            st.info("No worst answers yet — no thumbs-down or ungrounded "
-                    "answers have been logged.")
-        else:
-            for w in worst:
-                qid = w.get("qa_log_id")
-                with st.expander(
-                        f"{'👎' if (w.get('thumbs') or 0) < 0 else '❓'} "
-                        f"{w['question']} — {w.get('status', 'open')}"):
-                    st.write(f"**Answer:** {w.get('answer', '—')}")
-                    st.write(f"**Citations:** {w.get('citations') or '—'}")
-                    st.write(f"**Reason:** {w.get('reason', '—')}")
-                    st.write(f"**Grounded:** {w.get('grounded')} · "
-                             f"**Thumbs:** {w.get('thumbs', 0)}")
-                    if w.get("status") == "open":
-                        b1, b2 = st.columns(2)
-                        with b1:
-                            if st.button("➕ Add to eval set",
-                                         key=f"eval-{qid or w['question'][:20]}"):
-                                if LIVE and live_dash is not None and qid:
-                                    import urllib.request as _u
-                                    req = _u.Request(
-                                        API_URL + f"/accuracy/worst-answers/{qid}/action",
-                                        method="POST",
-                                        data=json.dumps(
-                                            {"action": "add_to_eval_set"}).encode(),
-                                        headers={"Content-Type": "application/json"})
-                                    try:
-                                        with _u.urlopen(req, timeout=5) as resp:
-                                            st.success("Added to the eval set "
-                                                       "(live backend).")
-                                    except Exception as exc:
-                                        st.error(f"Backend did not accept it: {exc}")
-                                else:
-                                    st.session_state.setdefault("worst_actions", {})[
-                                        qid or w["question"]] = "add_to_eval_set"
-                                    st.success("Demo mode: noted locally as "
-                                               "added to the eval set.")
-                                st.rerun()
-                        with b2:
-                            if st.button("✓ Mark fixed",
-                                         key=f"fix-{qid or w['question'][:20]}"):
-                                if LIVE and live_dash is not None and qid:
-                                    import urllib.request as _u
-                                    req = _u.Request(
-                                        API_URL + f"/accuracy/worst-answers/{qid}/action",
-                                        method="POST",
-                                        data=json.dumps(
-                                            {"action": "mark_fixed"}).encode(),
-                                        headers={"Content-Type": "application/json"})
-                                    try:
-                                        with _u.urlopen(req, timeout=5) as resp:
-                                            st.success("Marked fixed (live backend).")
-                                    except Exception as exc:
-                                        st.error(f"Backend did not accept it: {exc}")
-                                else:
-                                    st.session_state.setdefault("worst_actions", {})[
-                                        qid or w["question"]] = "mark_fixed"
-                                    st.success("Demo mode: noted locally as fixed.")
-                                st.rerun()
-                    else:
-                        st.caption(f"Status: **{w.get('status')}** — already "
-                                   "recorded, cannot be added twice.")
-
-        # --- 6. Eval Run History ----------------------------------------
-        st.subheader("Eval Run History")
-        st.caption("A failed eval run blocks the deploy via the CI "
-                   "regression gate. Pass = groundedness ≥ 90% and "
-                   "retrieval top-1 ≥ 85%.")
-        if eval_runs:
-            st.dataframe(pd.DataFrame([{
-                "Date": r.get("date", ""),
-                "Eval set": r.get("eval_set", ""),
-                "Groundedness": (format_value(r.get("groundedness"), "rate")
-                                 if isinstance(r.get("groundedness"), (int, float))
-                                 else r.get("groundedness", "—")),
-                "Retrieval top-1": (format_value(r.get("retrieval_top1"), "rate")
-                                    if isinstance(r.get("retrieval_top1"), (int, float))
-                                    else r.get("retrieval_top1", "—")),
-                "Guardrail block": (format_value(r.get("guardrail_block"), "rate")
-                                    if isinstance(r.get("guardrail_block"), (int, float))
-                                    else r.get("guardrail_block", r.get("guardrail_block_rate", "—"))),
-                "Cache hit": (format_value(r.get("cache_hit"), "rate")
-                              if isinstance(r.get("cache_hit"), (int, float))
-                              else r.get("cache_hit", r.get("cache_hit_rate", "—"))),
-                "Result": r.get("result", ""),
-            } for r in eval_runs]), use_container_width=True, hide_index=True)
-        else:
-            st.info("No eval runs yet.")
-
-        # --- 7. Drill-down: raw events ----------------------------------
-        st.subheader("Drill-down — raw events behind a metric")
-        st.caption("Pick a metric (or a request) and see the raw logged "
-                   "events: step, model, latency, grounded, cache hit, "
-                   "guardrail action, cost. Prompts, plan text and email "
-                   "bodies are never logged in full and never shown here — "
-                   "only PII-free fields.")
-        drill = st.selectbox(
-            "Drill into",
-            ["All steps", "ask", "retrieval", "takeoff", "guardrail",
-             "send_supplier_email", "twin_simulate"],
-            key="accuracy-drill")
-        events = [e for e in raw_events
-                  if drill == "All steps" or e.get("step") == drill]
-        if events:
-            st.dataframe(pd.DataFrame([{
-                "request_id": e.get("request_id", ""),
-                "Step": e.get("step", ""),
-                "Model": e.get("model", ""),
-                "Latency (ms)": e.get("latency_ms"),
-                "Grounded": e.get("grounded"),
-                "Cache hit": e.get("cache_hit"),
-                "Guardrail": e.get("guardrail_action", ""),
-                "Cost ($)": e.get("cost_usd", 0.0),
-                "When": e.get("created_at", ""),
-            } for e in events]), use_container_width=True, hide_index=True)
-        else:
-            st.info(f"No raw events for step “{drill}” yet.")
-        st.caption("Accuracy is a loop, not a report: evals → this dashboard "
-                   "→ Worst Answers / failing items → fix → re-run evals → "
-                   "the dashboard shows whether it improved. The dashboard "
-                   "never changes the product by itself.")
-
+# Tab 7 — Settings
 # Tab 7 — Settings
 # ---------------------------------------------------------------------------
 elif nav == "7 · Settings":

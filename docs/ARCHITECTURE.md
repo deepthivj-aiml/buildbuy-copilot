@@ -385,7 +385,8 @@ eval_runs(id, eval_set, groundedness DECIMAL, retrieval_top1 DECIMAL,
    chase buttons; records export.
 6. **Accuracy** — observability dashboard: 4 headline cards (groundedness /
    thumbs-up rate / takeoff mean error / cost per job, each with n=), 2 trend
-   charts, per-module table, Worst Answers list, Eval Run History. All
+   charts, per-module table. Evaluations are internal only — no Worst
+   Answers list, Eval Run History or drill-down in the UI. All
    numbers measured or labelled synthetic; "no data yet" when empty.
 7. **Settings** — contact, sharing defaults, free-tier usage, BYO key status
    (never the key value), data export/delete.
@@ -446,13 +447,15 @@ fails if the two copies drift apart.
 `metrics` (the 8, each with formula/source/n/target/status),
 `headline` (4 cards: groundedness, 👍 rate, takeoff error, cost per job
 — the same 4 metrics, not a different score), `trends` (30 days of
-`metrics_daily`), `per_module`, `worst_answers` (10 lowest:
-thumbs-down first, then ungrounded), `eval_runs`, `raw_events`
+`metrics_daily`), `per_module`, `alerts`, `approval_before_order`.
+The payload also still carries `worst_answers` (10 lowest:
+thumbs-down first, then ungrounded), `eval_runs` and `raw_events`
 (PII-free fields only: request_id, step, model, latency, grounded,
 cache hit, guardrail action, cost — no prompts, plan text or email
-bodies), `alerts`, `approval_before_order`. `build_accuracy_dashboard(db,
-days=30)` windows every count to the requested window. Empty metrics
-are `null` → the UI shows "no data yet".
+bodies) **for internal use only — the Accuracy tab does not read or
+render them**. `build_accuracy_dashboard(db, days=30)` windows every
+count to the requested window. Empty metrics are `null` → the UI shows
+"no data yet".
 
 `POST /accuracy/worst-answers/{qa_log_id}/action` with
 `{"action": "add_to_eval_set" | "mark_fixed"}`: "add to eval set"
@@ -466,17 +469,17 @@ The tab (`frontend/app.py`, "6 · Accuracy", pure helpers in
 `frontend/accuracy.py`): live mode fetches `GET /accuracy` when the
 backend answers `/health` and shows a LIVE badge; otherwise it shows
 labelled synthetic demo data from `frontend/demo_data.py`
-(`DEMO_ACCURACY`, 10 Worst Answers, 10 raw events) with a "Clear demo
-metrics" button that renders the empty state. Trend charts are Altair
-with the alert thresholds as **dashed red rules** (groundedness 90%,
-retrieval top-1 85%, eval pass 90%, p95 latency 10 s), falling back to
-`st.line_chart` when Altair is not installed. Demo thumbs-down feedback
-is merged into the Worst Answers list and demo actions are noted in
-session state only — nothing is written to the eval set in demo mode.
+(`DEMO_ACCURACY`) with a "Clear demo metrics" button that renders the
+empty state. Trend charts are Altair with the alert thresholds as
+**dashed red rules** (groundedness 90%, retrieval top-1 85%, eval pass
+90%, p95 latency 10 s), falling back to `st.line_chart` when Altair is
+not installed. The tab renders the observability dashboard only — 8
+metrics, headline cards, trends, per-module table. Thumbs-down
+feedback is recorded with the answer; it is not shown in any fix list.
 
-The loop is: evals → dashboard → Worst Answers / failing items → fix
-→ re-run evals → the dashboard shows whether it improved. The
-dashboard never changes the product by itself.
+Evaluations run internally: evals → `metrics_daily` / eval runs →
+the dashboard shows whether it improved. The dashboard never changes
+the product by itself, and no evaluation action exists in the UI.
 
 ## 11. Security / guardrails
 

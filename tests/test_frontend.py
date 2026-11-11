@@ -31,7 +31,7 @@ def test_demo_data_is_synthetic_and_complete():
     assert len(demo_data.DEMO_SUPPLIERS) == 6
     assert all("lat" in s and "lng" in s for s in demo_data.DEMO_SUPPLIERS)
     assert len(demo_data.DEMO_MATERIALS) == 5
-    assert demo_data.DEMO_QA and demo_data.DEMO_EVAL_RUNS
+    assert demo_data.DEMO_QA
 
 
 def test_parse_requirement():
@@ -323,23 +323,51 @@ def test_accuracy_format_and_status_never_invents():
         {"metrics": [{"value": 0.9}, {"value": None}]}) is False
 
 
-def test_accuracy_worst_answers_actions_and_merge():
+def test_accuracy_tab_has_no_evaluation_ui():
+    """Evaluations are internal only: the frontend carries no Worst
+    Answers helpers and no evaluation demo data, and the Accuracy tab
+    renders the observability dashboard only — no Worst Answers list,
+    no Eval Run History, no raw-events drill-down, no per-answer
+    evaluation actions. The backend still runs evaluations internally
+    (see tests/test_observability.py and test_backend.py)."""
     import accuracy
 
-    worst = accuracy.worst_answers_from_feedback(
-        [{"question": "Why is the beam wrong?", "thumbs": "down",
-          "reason": "wrong number"}],
-        demo_data.DEMO_WORST_ANSWERS)
-    assert len(worst) == 10  # capped at 10, live row first
-    assert worst[0]["question"] == "Why is the beam wrong?"
-    assert worst[0]["live"] is True
-    acted = accuracy.apply_worst_action(worst, "demo-qa-01", "add_to_eval_set")
-    row = next(r for r in acted if r["qa_log_id"] == "demo-qa-01")
-    assert row["status"] == "in_eval_set"
-    # A row already acted on is left alone (backend refuses duplicates).
-    acted2 = accuracy.apply_worst_action(acted, "demo-qa-01", "mark_fixed")
-    row2 = next(r for r in acted2 if r["qa_log_id"] == "demo-qa-01")
-    assert row2["status"] == "in_eval_set"
+    assert not hasattr(accuracy, "apply_worst_action")
+    assert not hasattr(accuracy, "worst_answers_from_feedback")
+    assert not hasattr(demo_data, "DEMO_WORST_ANSWERS")
+    assert not hasattr(demo_data, "DEMO_EVAL_RUNS")
+    assert not hasattr(demo_data, "DEMO_RAW_EVENTS")
+
+    import pytest
+
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(ROOT / "frontend" / "app.py"))
+    at.run()
+    assert not at.exception, at.exception
+    at.radio[0].set_value("6 · Accuracy").run()
+    assert not at.exception, at.exception
+    text = " ".join(str(m.value) for m in at.markdown) + " ".join(
+        str(m.value) for m in at.dataframe) + " ".join(
+        str(s.value) for s in at.subheader) + " ".join(
+        str(h.value) for h in at.header) + " ".join(
+        str(c.value) for c in at.caption) + " ".join(
+        str(b.label) for b in at.button)
+    for name in ("Groundedness", "Retrieval accuracy", "Answer accuracy",
+                 "Takeoff estimate accuracy", "Supplier ranking accuracy",
+                 "Buyer-agent accuracy", "Guardrail block rate",
+                 "Cost / cache / speed"):
+        assert name in text, f"missing from Accuracy tab: {name}"
+    for gone in ("Worst Answers", "Eval Run History", "Drill-down",
+                 "Add to eval set", "Mark fixed", "fix list"):
+        # "fix list" appears only in the note that there is NO fix list.
+        if gone == "fix list":
+            assert "no fix list" in text.lower()
+            continue
+        assert gone not in text, f"evaluation UI still rendered: {gone}"
+    assert "observability dashboard" in text.lower()
+    assert "evaluations" in text.lower()  # the internal-only note is shown
 
 
 def test_accuracy_demo_dashboard_is_complete_and_honest():
@@ -356,13 +384,6 @@ def test_accuracy_demo_dashboard_is_complete_and_honest():
     # the 58% agreement rate is separate, never blended in.
     buyer = next(m for m in dash["metrics"] if m["key"] == "buyer_agent")
     assert buyer["value"] == 1.0 and buyer["agreement_rate"] == 0.58
-    assert len(demo_data.DEMO_WORST_ANSWERS) == 10
-    assert len(demo_data.DEMO_RAW_EVENTS) == 10
-    # Raw events are PII-free: no prompt, plan text or email body.
-    assert all(set(e) <= {"request_id", "step", "model", "latency_ms",
-                          "grounded", "cache_hit", "guardrail_action",
-                          "cost_usd", "created_at"}
-               for e in demo_data.DEMO_RAW_EVENTS)
     rows = accuracy.trend_rows(
         demo_data.DEMO_METRICS_DAYS, demo_data.DEMO_GROUNDEDNESS,
         demo_data.DEMO_RETRIEVAL_TOP1, demo_data.DEMO_EVAL_PASS)
@@ -397,8 +418,7 @@ def test_accuracy_tab_renders_in_streamlit():
     for name in ("Groundedness", "Retrieval accuracy", "Answer accuracy",
                  "Takeoff estimate accuracy", "Supplier ranking accuracy",
                  "Buyer-agent accuracy", "Guardrail block rate",
-                 "Cost / cache / speed", "Worst Answers",
-                 "Eval Run History", "Drill-down"):
+                 "Cost / cache / speed"):
         assert name in text, f"missing from Accuracy tab: {name}"
     # Demo metrics are labelled synthetic — the tab never pretends they
     # are live measurements.
@@ -528,7 +548,7 @@ def test_all_seven_tabs_render_after_restyle():
         "3 · Suppliers & Twin": "Suppliers & Twin — best cost AND quality, not cost alone",
         "4 · Buyer Agent": "Buyer Agent — quotes, negotiation, approval",
         "5 · My Orders": "My Orders — full timeline, delivery chase, invoices",
-        "6 · Accuracy": "Accuracy — is the copilot getting better or worse?",
+        "6 · Accuracy": "Accuracy — observability dashboard",
         "7 · Settings": "Settings — contact, sharing, usage, data",
     }
     for nav_value, heading in headings.items():

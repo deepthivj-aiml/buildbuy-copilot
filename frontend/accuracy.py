@@ -1,10 +1,14 @@
 """Accuracy dashboard — pure logic, no Streamlit import (frontend/accuracy.py).
 
 The 8 separate metrics (never blended into one score), headline cards,
-alert thresholds, trend series, Worst Answers actions and the raw-event
-drill-down. The Streamlit Accuracy tab (frontend/app.py) renders what
-this module computes; ``tests/test_frontend.py`` covers it without
-Streamlit installed.
+alert thresholds and trend series. The Streamlit Accuracy tab
+(frontend/app.py) renders what this module computes;
+``tests/test_frontend.py`` covers it without Streamlit installed.
+
+Evaluations are INTERNAL only: eval generation, eval runs, worst-answer
+review and raw-event checks live in the backend / tests / CI — none of
+them is rendered in this UI, and this module carries no evaluation
+actions. The tab shows the observability dashboard only.
 
 METRIC_DEFS must agree with the backend's ``app/observability.py``
 METRIC_DEFS on key, formula and target — enforced by a test.
@@ -93,43 +97,6 @@ def metric_status(metric_def, value):
 def dashboard_is_empty(dashboard):
     """True when every one of the 8 metrics has no data yet."""
     return all((m.get("value") is None) for m in dashboard.get("metrics", []))
-
-
-def apply_worst_action(worst_answers, qa_log_id, action):
-    """Pure Worst Answers action: returns a new list with the row's
-    status updated (open -> in_eval_set | fixed). A row already in that
-    state is left alone — the backend refuses duplicates the same way.
-    ``action`` is "add_to_eval_set" or "mark_fixed".
-    """
-    new_status = "in_eval_set" if action == "add_to_eval_set" else "fixed"
-    out = []
-    for row in worst_answers:
-        if row.get("qa_log_id") == qa_log_id and row.get("status") == "open":
-            out.append({**row, "status": new_status})
-        else:
-            out.append(dict(row))
-    return out
-
-
-def worst_answers_from_feedback(feedback, demo_worst):
-    """Merge live thumbs-down feedback (session state) into the Worst
-    Answers list, newest first, capped at 10. Live rows carry
-    qa_log_id=None (they exist only in this session) and are labelled
-    as live feedback, not demo data.
-    """
-    live = [{
-        "qa_log_id": None,
-        "question": f.get("question", ""),
-        "answer": "—",
-        "citations": "—",
-        "thumbs": -1 if f.get("thumbs") == "down" else 1,
-        "grounded": None,
-        "reason": f.get("reason") or "thumbs down — no reason given",
-        "status": "open",
-        "live": True,
-    } for f in feedback if f.get("thumbs") == "down"]
-    merged = live + [dict(r, live=False) for r in demo_worst]
-    return merged[:10]
 
 
 def fetch_live_accuracy(api_url=None, timeout=2):

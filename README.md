@@ -216,11 +216,13 @@ into one score** (groundedness, retrieval, answer accuracy, takeoff
 estimate accuracy, supplier ranking, buyer-agent accuracy, guardrail
 block rate, cost / cache / speed) — each with formula, source, n= and
 target. Plus 4 headline cards, 2 trend charts with alert thresholds
-as dashed lines, a per-module table, **Worst Answers** (10 lowest —
-"Add to eval set" / "Mark fixed"), **Eval Run History**, and a
-drill-down to raw events. Live data from the backend when it is up;
-labelled synthetic demo data otherwise; **"no data yet"** when empty —
-never an invented percentage. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §10.
+as dashed lines, and a per-module table. **Evaluations are internal
+only** — eval runs, worst-answer review and raw-event checks run in
+the backend, tests and CI; the tab shows the observability dashboard
+only, with no fix list and no evaluation action. Live data from the
+backend when it is up; labelled synthetic demo data otherwise;
+**"no data yet"** when empty — never an invented percentage. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §10.
 
 ### Step 7 — Settings: your details, your data
 
@@ -242,7 +244,7 @@ product, what it does here, and how to see or test it.
 | 1 | Hybrid Search RAG over Internal Docs | `app/rag/retrieval.py` (`HybridRetrieval`) | TF-IDF + BM25, fused with RRF; optional local sentence-transformers / FAISS embeddings when installed, silent fallback to TF-IDF + BM25 when not. Finds plan passages, spec clauses and supplier docs; answers carry citations or an honest "not found". | Plan & Materials tab: ask a plan question. `pytest tests/test_rag.py -v` |
 | 2 | Agent Orchestration System | `app/agents/graph.py` (`BuyerGraph`) | LangGraph `StateGraph` when installed — Planner → Finder → Buyer → Negotiator → **human approval gate** → Order → Chaser → InvoiceTracker; deterministic local runner with the same gate when LangGraph is absent. | Buyer Agent tab: run a buyer flow and approve it. `pytest tests/test_backend.py -v` |
 | 3 | Semantic Caching Layer | `app/cache/semantic_cache.py` (`SemanticCache`) | TF-IDF cosine + synonyms, plan-aware. Repeat plan / supplier questions are served with no LLM call; savings are shown. In-memory by default, Redis optional. | Ask the same plan question twice. `pytest tests/test_cache.py -v` |
-| 4 | Automated Eval Dataset Generator | `app/evals/eval_gen.py` (`generate_eval_pairs`, `run_eval`) | Generates grounded Q&A eval pairs from plan metadata and supplier / quote records, dedupes them, quality-checks grounding, exports JSONL / CSV; the runner measures retrieval top-1/top-3, groundedness and guardrail block rate. | Accuracy tab: Eval Run History. `pytest tests/test_evals.py -v` |
+| 4 | Automated Eval Dataset Generator | `app/evals/eval_gen.py` (`generate_eval_pairs`, `run_eval`) | Generates grounded Q&A eval pairs from plan metadata and supplier / quote records, dedupes them, quality-checks grounding, exports JSONL / CSV; the runner measures retrieval top-1/top-3, groundedness and guardrail block rate. | Internal only — evals run in the backend / tests / CI; the Accuracy tab shows the observability dashboard only. `pytest tests/test_evals.py -v` |
 | 5 | LoRA Fine-Tuning Pipeline | `app/lora/adapter.py` (`ToyLoRA`) | **Toy scale, labelled honestly:** numpy-only rank-2 adapter (r=2) that classifies a requirement into `plan_qa` / `takeoff` / `supplier_search` / `buyer`, trained on 12 synthetic examples. The real PEFT path (sentence-transformers + `peft.LoraConfig`, per-user training) is documented in the file — **not run**, needs PyTorch + PEFT + a GPU or patience. | `pytest tests/test_lora.py -v` |
 | 6 | LLM Guardrails and Output Validation | `app/guardrails/guardrails.py` (`Guardrails`) | **Deterministic, no LLM decides:** PII redaction (regex; Presidio used only if installed), price cap, deadline, policy blocklist, never-pay check, contact-sharing check. Runs **before** the cache and **before** any email is sent, so a violating input can never be served a cached answer or emailed to a supplier. | Buyer Agent tab: try a price above your cap. `pytest tests/test_guardrails.py -v` |
 

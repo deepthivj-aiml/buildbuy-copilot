@@ -58,7 +58,7 @@ modular, verify with measured tests + a live smoke test.
 | M3 — Suppliers + Twin + Ranking | `app/suppliers/` (directory, evidence-only quality, MOQ/lead filters, **canonical** best-value formula, manual delivery location), `app/twin/` (DigitalTwin: landed cost, delivery date, cost + quality risk, what-if), `app/ranking.py` (rank_shortlist + twin what-if; imports the canonical formula). **Total landed cost** (this pass): goods + transport + taxes/fees with a per-supplier breakdown; transport is optional/manual (see §4). |
 | M4 — Buyer Agent + Email | `app/agents/` (LangGraph Planner → Finder → Buyer → Negotiator → **human approval gate** → Order → Chaser → InvoiceTracker; deterministic local runner without LangGraph), `app/email/` (MockSMTP default — writes `data/mock_mail/`, never sends real mail; transactional outbox, deterministic idempotency keys). |
 | M5 — Guardrails + Cache + Evals + LoRA | `app/guardrails/` (price cap, deadline, blocklist, never-pay, PII redaction, contact toggle), `app/cache/` (plan-aware semantic cache, Redis optional), `app/evals/` (73-pair generated eval set; runner measures retrieval top-1/top-3, groundedness, guardrail block rate), `app/lora/` (toy rank-2 intent adapter; train accuracy 1.0 on 12 synthetic examples). |
-| M6 — Observability / Accuracy | `app/observability.py` (`metrics_daily` rollup — §13: now also retrieval top-1, guardrail block rate, ranking top-1, cost per job from eval runs / orders / events; takeoff MAPE stays NULL until corrected-vs-estimate pairs exist) + `GET /accuracy` + Worst Answers actions + full Accuracy tab in the UI (`frontend/accuracy.py`, `frontend/demo_data.py`). Measured only, NULL when no data. Fixed this pass: `compute_daily_metrics` returned detached ORM rows (DetachedInstanceError) — now flush → expunge → commit. |
+| M6 — Observability / Accuracy | `app/observability.py` (`metrics_daily` rollup — §13: now also retrieval top-1, guardrail block rate, ranking top-1, cost per job from eval runs / orders / events; takeoff MAPE stays NULL until corrected-vs-estimate pairs exist) + `GET /accuracy` + Worst Answers actions (internal-only since §20 — removed from the Accuracy tab UI) + full Accuracy tab in the UI (`frontend/accuracy.py`, `frontend/demo_data.py`). Measured only, NULL when no data. Fixed this pass: `compute_daily_metrics` returned detached ORM rows (DetachedInstanceError) — now flush → expunge → commit. |
 | M7 — Frontend | Streamlit, 7 tabs, chat-first Start (plan upload OR typed/photographed requirement in chat, then quantity + optional location + deadline + budget as follow-ups). Split this pass into `app.py` (screens), `helpers.py` (pure ranking/transport/twin/parsing, tested without Streamlit), `demo_data.py` (synthetic data). Live mode when the backend is up, labelled DEMO MODE otherwise. |
 
 ## 3. Test results (measured only)
@@ -84,7 +84,7 @@ UI restyle (§16, +5 tests).
 | test_email.py | 2 | mock send + idempotent duplicate, draft + outbox drain |
 | test_observability.py | 8 | rate NULLs, empty-day NULLs, measured groundedness 0.5, **METRIC_DEFS 8 unique, rollup populates retrieval/guardrail/ranking/cache/cost + takeoff NULL, empty dashboard all "no data", Worst Answers + PII-free raw events, Worst Answer action add-once-then-refuse** |
 | test_records.py | 2 | records CSV/JSON round-trip, invoice only when recorded |
-| test_frontend.py | 20 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A, **frontend/backend METRIC_DEFS agreement, accuracy format/status never invents, Worst Answers actions + live-feedback merge, demo dashboard complete + honest (takeoff "no data", buyer-agent 1.0 with 0.58 agreement rate separate), live fetch returns None when backend down, real Streamlit AppTest render of the Accuracy tab; NEW: parser item/unit/location + LLM-hook fallback, takeoff updates from typed requirement (all 5 cases), supplier contact never invented, quote-email preview OFF/ON + blocked + backend parity, AppTest end-to-end takeoff update, AppTest email preview/edit/send, AppTest blocked send when email not held, AppTest render of all 7 tabs after the restyle** |
+| test_frontend.py | 20 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A, **frontend/backend METRIC_DEFS agreement, accuracy format/status never invents, no evaluation UI in the Accuracy tab (test asserts Worst Answers / Eval Run History / drill-down are not rendered), demo dashboard complete + honest (takeoff "no data", buyer-agent 1.0 with 0.58 agreement rate separate), live fetch returns None when backend down, real Streamlit AppTest render of the Accuracy tab; NEW: parser item/unit/location + LLM-hook fallback, takeoff updates from typed requirement (all 5 cases), supplier contact never invented, quote-email preview OFF/ON + blocked + backend parity, AppTest end-to-end takeoff update, AppTest email preview/edit/send, AppTest blocked send when email not held, AppTest render of all 7 tabs after the restyle** |
 | test_theme.py | 4 | palette/CSS consistency, status chips keep their text label (HTML-escaped), journey stepper shows all 9 steps + clamps, hero labels demo/live honestly |
 | test_modularity.py | 3 | public interfaces, import map, no auto-location / no hard torch/faiss |
 | test_escalation.py | 6 | agent identity in draft (OFF/ON), send OFF hides contact end-to-end, send ON shares it, answerable question answered, unanswerable escalates → customer emailed → customer reply to supplier |
@@ -642,3 +642,44 @@ parsing "concrete, 10 m3, Fremont" crashed the app.
 5. **Decide the follow-ups:** `frontend/screens/` package split; real
    VLM behind `VisionReader.read_plan` (needs provider + cost decision);
    LLM key (optional — local fallback works without one).
+
+
+## 20. Evaluation UI removed from the Accuracy tab (user update 2026-11-10 22:03)
+
+The user asked what "Worst Answers — the fix list (10 lowest)" was for
+and said: do all evaluations internally, give the observability
+dashboard only, and keep the UI for user input only — not evaluation.
+
+- **Removed from the UI** (`frontend/app.py` tab 6, `frontend/accuracy.py`,
+  `frontend/demo_data.py`): the Worst Answers section (10 lowest +
+  "Add to eval set" / "Mark fixed" buttons + statuses), Eval Run
+  History, and the raw-events drill-down; the per-module table no
+  longer has a "Worst in 7 days" column; the thumbs-down message no
+  longer says the answer "goes to the Worst Answers list" (feedback is
+  still recorded). The frontend helpers `apply_worst_action` /
+  `worst_answers_from_feedback` and the demo constants
+  `DEMO_WORST_ANSWERS` / `DEMO_EVAL_RUNS` / `DEMO_RAW_EVENTS` are
+  deleted. The tab heading is now "Accuracy — observability dashboard"
+  and states plainly that evaluations run internally, with no fix list
+  and no evaluation action in the UI.
+- **Kept in the UI** (observability dashboard only): 8 separate metrics
+  with formula/source/n/target/status, 4 headline cards, 2 trend
+  charts with alert thresholds as dashed rules (the Eval pass % line
+  stays as an aggregate trend series only — no run list behind it),
+  per-module breakdown (module/metric/value/n), alerts, "no data yet"
+  empty states, LIVE badge in live mode.
+- **Still runs internally — nothing deleted from the backend:**
+  `app/evals/` (eval generation + runner), `app/observability.py`
+  (`build_accuracy_dashboard` still returns `worst_answers` /
+  `eval_runs` / `raw_events` in the `GET /accuracy` payload for
+  internal use; `record_worst_answer_action` + `POST
+  /accuracy/worst-answers/{id}/action` unchanged), and the backend
+  tests for both (`test_observability.py`,
+  `test_backend.py::test_accuracy_worst_answer_action_round_trip`).
+- **Tests:** 81 passed, 0 failed (`pytest tests/ -v`), `self_test.py`
+  exit 0. New `test_accuracy_tab_has_no_evaluation_ui` asserts the
+  frontend helpers/demo constants are gone and an AppTest render of
+  the Accuracy tab shows all 8 metric names and none of "Worst
+  Answers" / "Eval Run History" / "Drill-down" / "Add to eval set" /
+  "Mark fixed". UAT §6 is now 6.1–6.8 (evaluation checks 6.5–6.9
+  removed; 2.8 updated).
