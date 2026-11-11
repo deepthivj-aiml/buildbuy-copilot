@@ -298,6 +298,16 @@ the deterministic local fallback in `app/vlm/plan_vision.py`
 (`VisionReader` reads structured plan data — no image pixels, no VLM
 call); a real VLM plugs in behind the same `read_plan` interface.
 
+**MCP (2026-11-11):** I added a local stdio MCP server
+(`app/mcp/`, official Python MCP SDK 2.x) so I can use the same
+buying engine from Claude Desktop / Claude Code: 6 tools —
+`search_suppliers`, `get_takeoff`, `get_quote` (draft only, nothing
+sent), `list_orders`, `get_order_status`, `get_accuracy` — all
+read-only or draft-only, guardrailed, session-only, demo data
+labelled. Run it with `python -m app.mcp.server`. See
+[`docs/MCP.md`](docs/MCP.md). It is NOT one of the 6 screenshot
+skills above — it is an extra way in, built on top of them.
+
 ---
 
 ## 4. Architecture in brief
@@ -442,3 +452,4 @@ test: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Free deploy ($0), smoke test |
 | [`docs/UAT.md`](docs/UAT.md) | Manual UAT checklist (84 items, phone-first) |
 | [`docs/FREE_MODELS.md`](docs/FREE_MODELS.md) | Free/local models used by default and BYO paid options |
+| [`docs/MCP.md`](docs/MCP.md) | MCP server: 6 tools, how to run it, Claude Desktop / Claude Code config, limits |

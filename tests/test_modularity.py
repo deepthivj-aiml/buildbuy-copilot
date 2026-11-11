@@ -40,6 +40,8 @@ INTERFACES = {
     "app.lora": ["ToyLoRA", "INTENTS"],
     "app.observability": ["compute_daily_metrics"],
     "app.records": ["build_records", "build_export", "to_csv", "to_json"],
+    "app.mcp": ["create_server", "TOOL_NAMES", "call_tool", "list_tools",
+                "SessionStore"],
     "app.integrations": ["MODULE_AVAILABILITY", "rag_retrieve", "run_takeoff",
                          "twin_simulate", "guardrail_check", "classify_intent"],
 }
@@ -63,6 +65,8 @@ ALLOWED_IMPORTS = {
     "lora": set(),
     "observability": {"app.db"},
     "records": {"app.db"},
+    "mcp": {"app.suppliers", "app.takeoff", "app.email", "app.guardrails",
+            "app.observability", "app.live"},  # read/draft only — no send, no order
     "integrations": {"app.rag", "app.takeoff", "app.suppliers", "app.twin",
                      "app.guardrails", "app.cache", "app.evals", "app.lora",
                      "app.ranking", "app.config"},

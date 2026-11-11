@@ -859,3 +859,73 @@ Parent to push (new GitHub PAT, push-8) and verify the Streamlit
 redeploy in the browser: Excel download present, Contact → approval
 panel → Approve sends + user email recorded, concrete 10 m3 still
 works, Find button still works.
+
+## 23. MCP server (user update 2026-11-11)
+
+### What changed
+
+- **New module 16, `app/mcp/`:** a local stdio MCP server on the
+  official Python MCP SDK (`mcp==2.3.0`, `MCPServer` — FastMCP was
+  renamed in 2.x; verified against the installed SDK, not assumed).
+  Tool logic lives in `app/mcp/tools.py` (SDK-free, testable without
+  a transport); `app/mcp/server.py` registers it on the SDK and runs
+  stdio via `python -m app.mcp.server`.
+- **6 tools** — `search_suppliers` (ranked shortlist, cost AND
+  quality, evidence; MOQ exclusions listed), `get_takeoff`
+  (estimate label on every line; no quantity means no line),
+  `get_quote` (draft only, `sent: False`, agent identity line,
+  contact sharing OFF), `list_orders` / `get_order_status`
+  (session-only, empty unless the session registered an order),
+  `get_accuracy` (8 metric definitions, values "no data yet").
+  All inputs Pydantic-validated; guardrails run first (blocklist /
+  never-pay block, PII redacted, price cap blocks `get_quote`).
+  No tool sends email or places an order — there is no such tool.
+- **Two bugs found by the tests and fixed:** (1) the typed quantity
+  in the requirement was ignored in favour of the default 1.0, so
+  steel at 50 units hit every MOQ and returned an empty shortlist —
+  the parsed quantity now wins; (2) the stdio tests used
+  `result.isError`, renamed `is_error` in MCP 2.x.
+- **Modularity map updated:** `tests/test_modularity.py` gains
+  `app.mcp` in the interface map and the allowed-import map
+  (suppliers, takeoff, email, guardrails, observability, live).
+
+### Tests
+
+- **New `tests/test_mcp.py`: 23 passed** — tool listing, each
+  tool's happy path + invalid-input case + guardrail case (payment
+  instruction blocked, PII redacted not blocked, price above cap
+  blocks `get_quote`), unknown tool/order/supplier errors, and two
+  real-protocol stdio end-to-end tests with the official SDK client
+  (list tools + call `search_suppliers`; unknown tool returns an
+  error result).
+- **Full suite: 124 passed, 0 failed, 0 skipped** (`pytest tests/
+  -q`), `tests/self_test.py` not re-run for this change (no live-flow
+  code touched). Was 101 passed at 3c01231; +23 new MCP tests.
+
+### Verified end-to-end (real MCP protocol, SDK client)
+
+- `search_suppliers("concrete, 10 m3", Fremont)` → 5 ranked:
+  best value Alameda Concrete Supply $1,435.04, cheapest Central
+  Valley Aggregate Co $1,292.00, highest quality Bay Area Building
+  Supply 88/100 — the documented demo winners.
+- `get_takeoff("concrete, 10 m3")` → Concrete 10.0 m3, "estimate,
+  not a surveyed quantity".
+- `get_quote(Bay Area Building Supply, "concrete, 10 m3")` →
+  draft only, `sent: False`, to sales-sup01@example.invalid,
+  landed $1,463.40.
+- `list_orders` → empty; `get_accuracy` → 8 metrics, all "no data
+  yet".
+
+### Docs updated
+
+`docs/MCP.md` (new: tools, run, Claude Desktop / Claude Code config
+snippet, limits — config only, NOT claimed tested in Claude
+Desktop/Code), README.md (Skills Mapping MCP line + Docs table),
+`docs/MODULES.md` (module 16), `requirements.txt` (`mcp==2.3.0`).
+
+### Status
+
+Local commit only — **not pushed, not deployed, no real emails sent.**
+Parent to push (new GitHub PAT) and verify the Streamlit redeploy in
+the browser as usual; the MCP server itself is local stdio and is
+not deployed anywhere.
