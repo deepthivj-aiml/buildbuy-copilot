@@ -112,11 +112,19 @@ def rag_retrieve(question: str, plan_id: str | None = None, top_k: int = 3) -> l
 
 # -------------------------------------------------------------- takeoff
 try:  # compute_takeoff(plan_dict) -> TakeoffResult
-    from app.takeoff.engine import compute_takeoff as _compute_takeoff  # type: ignore
+    from app.takeoff.engine import (  # type: ignore
+        ESTIMATE_LABEL as _ESTIMATE_LABEL,
+    )
+    from app.takeoff.engine import apply_requirement_to_result as _apply_req
+    from app.takeoff.engine import compute_takeoff as _compute_takeoff
+    from app.takeoff.engine import takeoff_line_from_requirement as _line_from_req
 
     TAKEOFF_AVAILABLE = True
 except Exception as exc:  # noqa: BLE001
     _compute_takeoff = None
+    _apply_req = None
+    _line_from_req = None
+    _ESTIMATE_LABEL = "estimate, not a surveyed quantity"
     TAKEOFF_AVAILABLE = False
     logger.info("takeoff module not available yet (%s); using fallback", exc)
 
@@ -165,8 +173,14 @@ def run_takeoff(requirement: dict, plan: dict | None = None) -> list[dict]:
 
     ``plan`` may be a full plan dict (floor_area_m2, spec_clauses, ...)
     or ``{"file_name": ...}`` pointing at a plan JSON in data/plans/.
-    Fallback: requirement items, labelled estimate.
+    Typed requirement items are ALWAYS applied on top of a plan
+    takeoff (a typed quantity updates its material's line, a new
+    material appends a line) — before the 2026-11-10 fix the plan
+    takeoff was returned as-is and every typed quantity was silently
+    discarded. With no plan, the takeoff is built from the requirement
+    items alone. An item with no quantity contributes no line.
     """
+    items = requirement.get("items", []) or []
     if _compute_takeoff is not None and plan:
         plan_data = None
         if "floor_area_m2" in plan or "spec_clauses" in plan:
@@ -175,21 +189,35 @@ def run_takeoff(requirement: dict, plan: dict | None = None) -> list[dict]:
             plan_data = _load_plan_json(plan.get("file_name"))
         if plan_data is not None:
             try:
-                return _takeoff_lines_from_result(_compute_takeoff(plan_data))
+                result = _compute_takeoff(plan_data)
+                if _apply_req is not None:
+                    result = _apply_req(result, items)
+                return _takeoff_lines_from_result(result)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("takeoff failed: %s", exc)
-    return [
-        {
-            "material": item.get("item", "item"),
-            "quantity": item.get("quantity", 0),
-            "unit": item.get("unit", ""),
-            "method": "requirement list (no plan takeoff module yet)",
-            "confidence": None,
-            "flagged": False,
-            "estimate_label": True,
-        }
-        for item in requirement.get("items", [])
-    ]
+    lines = []
+    for item in items:
+        if _line_from_req is not None:
+            line = _line_from_req(item)
+            if line is None:
+                continue
+            lines.append({
+                "material": line.material, "quantity": line.quantity,
+                "unit": line.unit, "method": line.method,
+                "confidence": line.confidence, "flagged": line.flagged,
+                "estimate_label": line.estimate_label,
+            })
+        else:
+            lines.append({
+                "material": item.get("item", "item"),
+                "quantity": item.get("quantity", 0),
+                "unit": item.get("unit", ""),
+                "method": "user-typed quantity (takeoff module unavailable)",
+                "confidence": 0.90,
+                "flagged": not bool(item.get("unit")),
+                "estimate_label": _ESTIMATE_LABEL,
+            })
+    return lines
 
 
 # ------------------------------------------------------------- suppliers

@@ -264,25 +264,352 @@ def twin_risk(supplier, qty, price_pct, slip_days, qty_pct):
     }
 
 
-def parse_requirement(text):
-    """Tiny local parser (no LLM, no key): quantity, budget, location, deadline."""
-    req = {"raw": text, "item": text.strip(), "quantity": None,
+def parse_requirement(text, llm_parser=None):
+    """Parse a typed requirement (no LLM, no key, by default).
+
+    Returns {"raw", "item", "quantity", "unit", "location", "deadline",
+    "budget"}. ``item`` is ONLY the item name ("concrete", "steel
+    brackets") — never the full input text (bug fixed 2026-11-10:
+    the old version returned the raw text as the item). ``unit`` is
+    captured too ("10 m3" -> quantity 10, unit "m3") — the old version
+    dropped the unit entirely. ``location`` is a place name the user
+    typed after in/near/at, or a trailing place name that is a KNOWN
+    place — an unknown trailing word is never guessed as a location.
+
+    ``llm_parser`` is an OPTIONAL plug-in, not a requirement: a
+    callable(text) -> dict with the same keys, e.g. a free local model
+    (Ollama) supplied by the caller. When given, its item/quantity/
+    unit/location/deadline/budget are used where present and the
+    deterministic parse fills the rest; any error or empty result
+    falls back to the deterministic parse. No LLM is configured by
+    default and no key is needed — the deterministic parse handles
+    the stated inputs, and an LLM would NOT have fixed the takeoff
+    bug (that was missing wiring, not parsing).
+    """
+    deterministic = _parse_requirement_deterministic(text)
+    if llm_parser is None:
+        return deterministic
+    try:
+        llm_result = llm_parser(text)
+    except Exception:  # noqa: BLE001 — an LLM must never break parsing
+        return deterministic
+    if not isinstance(llm_result, dict) or not llm_result.get("item"):
+        return deterministic
+    merged = dict(deterministic)
+    for key in ("item", "quantity", "unit", "location", "deadline", "budget"):
+        if llm_result.get(key) not in (None, ""):
+            merged[key] = llm_result[key]
+    if isinstance(merged.get("item"), str):
+        merged["item"] = merged["item"].strip().strip(",").strip()
+    return merged
+
+
+# Units, longest-first so "m3" wins over "m" and "units" over "unit".
+_UNIT_RE = (r"(m³|m3|cubic metres|cubic meters|m²|m2|square metres|square meters"
+            r"|units?|pcs|pieces?|sheets?|bags?|rolls?|litres?|liters?"
+            r"|tonnes?|tons?|kg|metres|meters|feet|ft|m|l)\b")
+_UNIT_ALIASES = {
+    "m³": "m3", "m3": "m3", "cubic metres": "m3", "cubic meters": "m3",
+    "m²": "m2", "m2": "m2", "square metres": "m2", "square meters": "m2",
+    "unit": "pcs", "units": "pcs", "pcs": "pcs", "piece": "pcs", "pieces": "pcs",
+    "sheet": "sheets", "sheets": "sheets", "bag": "bags", "bags": "bags",
+    "roll": "rolls", "rolls": "rolls", "litre": "L", "litres": "L",
+    "liter": "L", "liters": "L", "l": "L",
+    "tonne": "t", "tonnes": "t", "ton": "t", "tons": "t",
+    "kg": "kg", "metre": "m", "metres": "m", "meter": "m", "meters": "m",
+    "m": "m", "foot": "ft", "feet": "ft", "ft": "ft",
+}
+_QTY_UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*" + _UNIT_RE, re.I)
+_QTY_BARE_RE = re.compile(r"(\d+(?:\.\d+)?)")
+_LEADING_QTY_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*x\s+", re.I)
+_BUDGET_RE = re.compile(r"(?:under|below|max|budget)\s*\$?\s*([\d,]+(?:\.\d+)?)", re.I)
+_DEADLINE_RE = re.compile(
+    r"\bby\s+(Friday|Monday|Tuesday|Wednesday|Thursday|Saturday|Sunday"
+    r"|\w+\s+\d+)", re.I)
+_LOCATION_PREP_RE = re.compile(r"\b(?:in|near|at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)")
+
+
+def _parse_requirement_deterministic(text):
+    req = {"raw": text, "item": "", "quantity": None, "unit": "",
            "location": "", "deadline": "", "budget": None}
-    m = re.search(r"(\d+)\s*(units|pcs|pieces)?", text, re.I)
-    if m:
-        req["quantity"] = int(m.group(1))
-    m = re.search(r"(?:under|below|max|budget)\s*\$?\s*([\d,]+)", text, re.I)
+    work = (text or "").strip()
+    if not work:
+        return req
+    m = _BUDGET_RE.search(work)
     if m:
         req["budget"] = float(m.group(1).replace(",", ""))
-    m = re.search(r"\b(?:in|near|at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", text)
-    if m:
-        req["location"] = m.group(1)
-    m = re.search(r"\bby\s+(Friday|Monday|Tuesday|Wednesday|Thursday|Saturday|Sunday|\w+\s+\d+)",
-                  text, re.I)
+        work = work[:m.start()] + work[m.end():]
+    m = _DEADLINE_RE.search(work)
     if m:
         req["deadline"] = m.group(1)
-    # Item = text with numbers/budget/location stripped is overkill; keep raw as item.
+        work = work[:m.start()] + work[m.end():]
+    # Leading "10 x concrete" form: the number before "x" is the quantity.
+    m = _LEADING_QTY_RE.match(work)
+    if m:
+        req["quantity"] = float(m.group(1))
+        if req["quantity"] == int(req["quantity"]):
+            req["quantity"] = int(req["quantity"])
+        work = work[m.end():]
+    m = _QTY_UNIT_RE.search(work)
+    if m:
+        if req["quantity"] is None:
+            qty = float(m.group(1))
+            req["quantity"] = int(qty) if qty == int(qty) else qty
+        req["unit"] = _UNIT_ALIASES.get(m.group(2).lower(), m.group(2).lower())
+        work = work[:m.start()] + work[m.end():]
+    elif req["quantity"] is None:
+        # A bare number with no unit: quantity known, unit unknown
+        # (never guessed — the takeoff flags the line for review).
+        m = _QTY_BARE_RE.search(work)
+        if m:
+            qty = float(m.group(1))
+            req["quantity"] = int(qty) if qty == int(qty) else qty
+            work = work[:m.start()] + work[m.end():]
+    m = _LOCATION_PREP_RE.search(work)
+    if m:
+        req["location"] = m.group(1)
+        work = work[:m.start()] + work[m.end():]
+    else:
+        # Trailing ", Fremont": a KNOWN place only — an unknown trailing
+        # word is left alone, never guessed as a location. Empty
+        # segments (left by removing budget / deadline chunks) are
+        # ignored when looking for the trailing place.
+        parts = [p.strip() for p in work.split(",")]
+        parts = [p for p in parts if p]
+        if len(parts) > 1:
+            tail = parts[-1].lower().removesuffix(", ca").removesuffix(
+                ", california").strip()
+            if tail in KNOWN_PLACES:
+                req["location"] = tail.title()
+                parts = parts[:-1]
+                work = ", ".join(parts)
+    item = ", ".join(p.strip() for p in work.split(",") if p.strip())
+    item = re.sub(r"\s+", " ", item).strip(" ,")
+    item = re.sub(r"\b(for|of|the)\s*$", "", item, flags=re.I).strip(" ,")
+    req["item"] = item
     return req
+
+
+ESTIMATE_LABEL = "estimate, not a surveyed quantity"
+
+# ------------------------------------------------------------- supplier contact
+# + quote-email preview (Buyer Agent tab, 2026-11-10 fix).
+#
+# What the UI must show BEFORE anything is sent, per supplier:
+#   * their contact details (never invented — "not held" when missing),
+#   * HOW they will be contacted (channel, from, to, subject),
+#   * the FULL email body, editable, with the contact-sharing toggle
+#     reflected in the text (OFF = "a customer", ON = name/email/phone).
+# The body below mirrors app/email/service.py EmailService.draft_quote
+# line-for-line (tested in test_frontend.py), so the preview is the
+# email that would actually be sent — not a second, drifting draft.
+BUYER_CONTACT = {
+    "name": "Deepthi Jainlal",
+    "email": "deepthiag26@gmail.com",
+    "phone": "+1 341-252-9234",
+}
+EMAIL_FROM = "BuildBuy Copilot <noreply@buildbuy.local>"  # config default (EMAIL_FROM)
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"\+?1?[\s().-]*\d{3}[\s().-]*\d{3}[\s().-]*\d{4}")
+
+
+def supplier_email(supplier):
+    """The supplier's email address, or None when it is not held.
+
+    Extracted from the supplier's ``email`` / ``contact`` field. A
+    value like "not public — request via email" contains no address
+    and returns None — it is never treated as an address, and the UI
+    must show "not held" and block sending instead of inventing one.
+    """
+    for key in ("email", "contact"):
+        value = (supplier or {}).get(key) or ""
+        m = _EMAIL_RE.search(str(value))
+        if m:
+            return m.group(0)
+    return None
+
+
+def supplier_contact_details(supplier):
+    """Contact details for one supplier — every field is either held
+    or explicitly None ("not held" in the UI). Nothing is invented:
+    demo suppliers carry no phone or street address, so those are
+    None; ``location`` is a city-level area, never an address."""
+    supplier = supplier or {}
+    return {
+        "name": supplier.get("name", "Unknown supplier"),
+        "email": supplier_email(supplier),
+        "phone": supplier.get("phone") or None,
+        "address": supplier.get("address") or None,
+        "area": supplier.get("location") or None,
+        "contact_source": supplier.get("contact_source") or "not stated",
+    }
+
+
+def strip_contact_details(body, buyer=None):
+    """Remove the buyer's name / email / phone (and any other email /
+    phone) from an email body — mirror of
+    app/email/service.py EmailService.strip_customer_identity.
+
+    Applied at send time whenever contact sharing is OFF for that
+    supplier, even if the user typed contact details into the edited
+    draft themselves.
+    """
+    buyer = buyer or BUYER_CONTACT
+    out = str(body or "")
+    for value in (buyer.get("email", ""), buyer.get("phone", ""),
+                  buyer.get("name", "")):
+        if value and value.strip():
+            out = out.replace(value, "[contact not shared]")
+    out = _EMAIL_RE.sub("[contact not shared]", out)
+    out = _PHONE_RE.sub("[contact not shared]", out)
+    return out
+
+
+def build_quote_email(req, supplier, *, share_contact=False, buyer=None,
+                      max_price=None):
+    """The full quote-request email for ONE supplier, as it would be sent.
+
+    Returns {"channel", "from", "to", "to_name", "subject", "body",
+    "sendable", "blocked_reason"}. Channel is always "email" in v1.
+    ``sendable`` is False (with a reason) when the supplier's email
+    is not held — the UI blocks sending instead of guessing an address.
+    """
+    buyer = buyer or BUYER_CONTACT
+    req = req or {}
+    details = supplier_contact_details(supplier)
+    qty = req.get("quantity") or 0
+    item = req.get("item") or "item"
+    who = buyer.get("name", "").strip() if share_contact else "a customer"
+    lines = [
+        "Hello,",
+        "",
+        f"I am BuildBuy Copilot, acting as the buying agent for {who}.",
+        "",
+        "I am enquiring on their behalf about the following part, "
+        "and would like a quote:",
+        f"- {qty} x {item}",
+    ]
+    if req.get("location"):
+        lines.append(f"\nDelivery location: {req['location']}")
+    if req.get("deadline"):
+        lines.append(f"Needed by: {req['deadline']}")
+    if max_price is not None:
+        lines.append(f"Budget (max): ${max_price}")
+    lines.append("\nCould you please send your best price, lead time, and delivery cost?")
+    if share_contact:
+        contact_parts = [p for p in [buyer.get("name", ""), buyer.get("email", ""),
+                                     buyer.get("phone", "")] if p]
+        if contact_parts:
+            lines.append("\nYou can reach the customer directly at: "
+                         + ", ".join(contact_parts))
+    lines.append(f"\nThank you,\nBuildBuy Copilot (buying agent for {who})")
+    email = details["email"]
+    return {
+        "channel": "email",
+        "from": EMAIL_FROM,
+        "to": email,
+        "to_name": details["name"],
+        "subject": f"Quote request — {qty} x {item}",
+        "body": "\n".join(lines),
+        "sendable": email is not None,
+        "blocked_reason": (None if email is not None else
+                           "Email not held for this supplier — add their email "
+                           "before sending; no address is ever guessed."),
+    }
+
+
+def _material_tokens(name):
+    """Normalised tokens of a material name: lowercased, parenthetical
+    removed ("Concrete (footings)" -> "concrete"), plurals singularised."""
+    core = re.sub(r"\(.*?\)", "", str(name or "")).lower()
+    core = re.sub(r"[^a-z0-9 ]", " ", core)
+    tokens = set()
+    for tok in core.split():
+        tokens.add(tok[:-1] if tok.endswith("s") and len(tok) > 2 else tok)
+    return tokens
+
+
+def _materials_match(req_item, line_material):
+    """True when a typed item names the same material as a takeoff line.
+
+    Exact after normalisation, or the typed item's tokens are a
+    multi-token subset of the line's core tokens ("steel brackets"
+    matches "Steel brackets"; "concrete" matches "Concrete
+    (footings)"). A single token that is only part of a multi-word
+    line ("steel" vs "Steel brackets") does NOT match — it is a
+    different material and gets its own line instead.
+    """
+    req_tokens = _material_tokens(req_item)
+    line_tokens = _material_tokens(line_material)
+    if not req_tokens or not line_tokens:
+        return False
+    if req_tokens == line_tokens:
+        return True
+    return len(req_tokens) >= 2 and req_tokens <= line_tokens
+
+
+def apply_requirement_to_takeoff(materials, req):
+    """Apply a parsed typed requirement to a takeoff table.
+
+    Returns (new_materials, note). ``materials`` is the frontend list
+    of dicts (material / quantity / unit / method / confidence /
+    flagged). This is the wiring the live bug was missing: before
+    2026-11-10 the frontend never called anything like this, so a
+    typed quantity never reached the table.
+
+    - No quantity in the requirement -> table unchanged, note says so;
+      a quantity is NEVER invented.
+    - The item matches an existing line -> that line's quantity (and
+      unit, when the user stated one) is updated; the method records
+      the override AND the old plan value, so the plan estimate is
+      never silently overwritten.
+    - No match -> a new line is appended for the typed item.
+    - Every line keeps the "estimate, not a surveyed quantity" label;
+      a line whose unit was not stated is flagged for review.
+    """
+    lines = [dict(m) for m in (materials or [])]
+    item = (req or {}).get("item") or ""
+    quantity = (req or {}).get("quantity")
+    if quantity is None or not item.strip():
+        return lines, ("No quantity in the typed requirement — the takeoff "
+                       "is unchanged (no quantity invented).")
+    unit = (req or {}).get("unit") or ""
+    display_item = item.strip()
+    display_item = display_item[:1].upper() + display_item[1:]
+    for line in lines:
+        if _materials_match(item, line.get("material", "")):
+            old_qty, old_unit = line.get("quantity"), line.get("unit", "")
+            line["quantity"] = quantity
+            if unit:
+                line["unit"] = unit
+            line["confidence"] = 0.90
+            line["flagged"] = False
+            line["source"] = "typed requirement"
+            line["estimate_label"] = ESTIMATE_LABEL
+            line["method"] = (
+                f"user-typed quantity ({quantity} {line['unit']}) — overrides "
+                f"plan estimate of {old_qty} {old_unit}; plan value kept here, "
+                f"not silently replaced")
+            if not unit:
+                line["method"] += " (unit not stated — kept plan unit; confirm)"
+                line["flagged"] = True
+            return lines, (f"Takeoff updated from your typed requirement: "
+                           f"{line['material']} → {quantity} {line['unit']} "
+                           f"(was plan estimate {old_qty} {old_unit}).")
+    new_unit = unit or "units"
+    lines.append({
+        "material": display_item,
+        "quantity": quantity,
+        "unit": new_unit,
+        "method": (f"user-typed quantity ({quantity} {new_unit})"
+                   + ("" if unit else " — unit not stated, assumed units; confirm")),
+        "confidence": 0.90,
+        "flagged": not bool(unit),
+        "source": "typed requirement",
+        "estimate_label": ESTIMATE_LABEL,
+    })
+    return lines, (f"Takeoff updated from your typed requirement: "
+                   f"{display_item} → {quantity} {new_unit} (new line).")
 
 
 def demo_answer(question):

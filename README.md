@@ -6,9 +6,13 @@ suppliers, simulates the purchase, messages suppliers for quotes, negotiates
 within your limits, and brings you one deal to approve — in 5 minutes, for
 $19–$49/month, with no procurement team and no money moved without your tap.
 
-**Live demo:** Deploy pending — see docs/DEPLOY.md. (No live link exists
-yet; do not treat any URL as live until it has passed the smoke test in
-`docs/DEPLOY.md` §4.)
+**Live demo:** https://tu2tztzegjayuwzxudxbnv.streamlit.app/ — deployed
+on Streamlit Community Cloud from `deepthivj-aiml/buildbuy-copilot`
+(branch master, `frontend/app.py`, Python 3.12) and verified live with
+sample inputs 2026-11-10 20:39 and again 21:15 (7 tabs load; "steel
+brackets, 50 units, Fremont, by Friday, under $400" parses and ranks;
+see `docs/DEPLOY.md` §4 for the smoke test). The app runs in Demo Mode
+(synthetic data, no real email) until the backend is deployed.
 
 **For:** freelance site engineers, solo architects, 1–3-person contractors,
 small shop owners — anyone who needs materials for one job this week, has no
@@ -25,16 +29,25 @@ buying team, and cannot afford a late delivery or a wrong quantity.
 2. **Plan & Materials** — Copilot answers with dual citations (highlighted
    plan region + exact spec clause) or an honest "not found"; materials
    takeoff with the method per line, labelled **"estimate, not a surveyed
-   quantity"**.
+   quantity"**. A typed requirement updates the takeoff: typing
+   "concrete, 10 m3" sets the concrete line to 10 m3 (the old plan value
+   is kept in the method, never silently replaced); a new material adds a
+   line; no quantity given means no line is invented. Loading a sample
+   plan never discards a typed quantity.
 3. **Suppliers & Twin** — ranked shortlist with cost AND quality per supplier
    (see [Cost AND quality](#best-cost-and-quality) below), map-like distance
    list, digital-twin what-if simulator (price/date/qty) showing cost risk
    AND quality risk. Optional delivery location (typed by you, blank by
    default) adds transport to total landed cost with a per-supplier
    breakdown; blank means "excl. transport".
-4. **Buyer Agent** — 3-column inbox, draft email shown before sending,
-   per-supplier contact-sharing toggle (default OFF), one negotiation round
-   within your limits, Approve/Reject pane. Every supplier email says
+4. **Buyer Agent** — 3-column inbox, per-supplier email preview shown in
+   full before sending (contact details, channel, from, to, subject and
+   the whole body — editable subject + body, Save / Reset to draft, Send
+   only after you confirm), per-supplier contact-sharing toggle (default
+   OFF) that the preview reflects (OFF = "a customer", ON = your name /
+   email / phone), and sending blocked — never guessed — when a
+   supplier's email is not held. One negotiation round within your
+   limits, Approve/Reject pane. Every supplier email says
    "BuildBuy Copilot, acting as the buying agent for [customer]" and
    enquires about the specific part + quantity. If a supplier asks a
    question the agent cannot answer from your requirement, it does NOT
@@ -51,6 +64,21 @@ buying team, and cannot afford a late delivery or a wrong quantity.
    data otherwise, "no data yet" when empty — never invented.
 7. **Settings** — contact, sharing defaults, free-tier usage, BYO key status
    (never the key value), data export/delete.
+
+## Look and feel
+
+Light indigo theme (`.streamlit/config.toml`: primary `#4F46E5`,
+background `#F8F7FF`, text `#1F2937`) with custom CSS in
+`frontend/theme.py`: a gradient hero banner (indigo → violet → teal)
+on every tab, a 9-step buyer-journey stepper (Requirement → Materials
+→ Suppliers → Twin → Buyer agent → Approval → Order → Delivery →
+Invoice), colour-coded status chips (best value green, cheapest blue,
+highest quality purple, order/thread/metric statuses), card-style
+supplier cards with coloured badges, gradient primary buttons and
+pill-style tab navigation. Colour is decoration only — every chip and
+step keeps its text label, demo data keeps its amber DEMO badge, and
+no colour implies a real result. All 7 tabs are render-checked with
+Streamlit AppTest (`tests/test_frontend.py::test_all_seven_tabs_render_after_restyle`).
 
 ## Accuracy — observability dashboard
 
@@ -255,6 +283,22 @@ one) and `RESEND_API_KEY` (only if `EMAIL_PROVIDER=resend`) are created by
 signing in to the provider dashboard with deepthiag26@gmail.com. **The app
 runs without any key** — local TF-IDF + rules, no VLM — at $0. Check
 `git status` never lists `.env` before committing.
+
+**LLM / VLM status (honest, 2026-11-10):** no LLM or VLM key is
+configured and none is needed for the features in v1. Typed
+requirements are parsed by a deterministic local parser
+(`frontend/helpers.py::parse_requirement` — item, quantity, unit,
+location, deadline, budget; no model call) with an optional
+`llm_parser` plug-in hook for a free local model (Ollama) that falls
+back to the deterministic parse on any error. Plan images are read by
+the deterministic local fallback in `app/vlm/plan_vision.py`
+(`VisionReader` reads structured plan data — title block, regions,
+spec clauses — no image pixels, no VLM call); a real VLM plugs in
+behind the same `read_plan` interface. The materials-takeoff bug
+reported live on 2026-11-10 was NOT an LLM/VLM issue: the frontend
+never wired the parsed requirement into the takeoff table. It is
+fixed by wiring (`apply_requirement_to_takeoff` / `run_takeoff`),
+not by adding a model — see `docs/BUILD_REPORT.md` §14.
 
 ### Run WITHOUT Docker (simplest first run — two terminals)
 

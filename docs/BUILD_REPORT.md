@@ -63,17 +63,17 @@ modular, verify with measured tests + a live smoke test.
 
 ## 3. Test results (measured only)
 
-Command: `.venv/bin/python -m pytest tests/ -v` — **63 passed, 0 failed,
+Command: `.venv/bin/python -m pytest tests/ -v` — **78 passed, 0 failed,
 0 skipped** (3 warnings: LangChain deprecation, FastAPI `on_event`
 deprecation — pre-existing, not failures). Updated 2026-11-11 after the
-Observability Dashboard UI update (§13, +13 tests).
+UI restyle (§16, +5 tests).
 
 | File | Tests | Covers |
 |---|---|---|
 | test_backend.py | 11 | health, requirement CRUD, ask (grounded + not-found), materials, approval pane ×2, simulate, confirm-refused, full draft→send→approve→confirm→invoice→records flow, reject, **GET /accuracy (8 metrics, formula/source/n/target) + Worst Answers action round-trip (200 → 409 duplicate → 404 missing → 422 unknown action)** |
 | test_rag.py | 1 | retrieval top-1, not-found, cited answer |
 | test_vlm.py | 4 | scale detection, regions, title block, plan Q&A / not-found |
-| test_takeoff.py | 1 | takeoff maths, estimate labels, reconciliation, flagged lines |
+| test_takeoff.py | 3 | takeoff maths, estimate labels, reconciliation, flagged lines; **typed requirement applied on top of a plan takeoff (override keeps old value, new material appends, no-quantity skipped); `run_takeoff` plan+typed merge and requirement-only fallback** |
 | test_suppliers.py | 3 | evidenced-only quality, cost+quality tradeoff (3 distinct winners), transport (manual location) |
 | test_twin.py | 2 | twin cost+quality risk, what-if breaks, ranking-fallback sim |
 | test_ranking.py | 4 | canonical blend (hand-computed scores), lead breaks ties, quality can win, no-evidence fallback |
@@ -84,10 +84,11 @@ Observability Dashboard UI update (§13, +13 tests).
 | test_email.py | 2 | mock send + idempotent duplicate, draft + outbox drain |
 | test_observability.py | 8 | rate NULLs, empty-day NULLs, measured groundedness 0.5, **METRIC_DEFS 8 unique, rollup populates retrieval/guardrail/ranking/cache/cost + takeoff NULL, empty dashboard all "no data", Worst Answers + PII-free raw events, Worst Answer action add-once-then-refuse** |
 | test_records.py | 2 | records CSV/JSON round-trip, invoice only when recorded |
-| test_frontend.py | 11 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A, **frontend/backend METRIC_DEFS agreement, accuracy format/status never invents, Worst Answers actions + live-feedback merge, demo dashboard complete + honest (takeoff "no data", buyer-agent 1.0 with 0.58 agreement rate separate), live fetch returns None when backend down, real Streamlit AppTest render of the Accuracy tab** |
+| test_frontend.py | 20 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A, **frontend/backend METRIC_DEFS agreement, accuracy format/status never invents, Worst Answers actions + live-feedback merge, demo dashboard complete + honest (takeoff "no data", buyer-agent 1.0 with 0.58 agreement rate separate), live fetch returns None when backend down, real Streamlit AppTest render of the Accuracy tab; NEW: parser item/unit/location + LLM-hook fallback, takeoff updates from typed requirement (all 5 cases), supplier contact never invented, quote-email preview OFF/ON + blocked + backend parity, AppTest end-to-end takeoff update, AppTest email preview/edit/send, AppTest blocked send when email not held, AppTest render of all 7 tabs after the restyle** |
+| test_theme.py | 4 | palette/CSS consistency, status chips keep their text label (HTML-escaped), journey stepper shows all 9 steps + clamps, hero labels demo/live honestly |
 | test_modularity.py | 3 | public interfaces, import map, no auto-location / no hard torch/faiss |
 | test_escalation.py | 6 | agent identity in draft (OFF/ON), send OFF hides contact end-to-end, send ON shares it, answerable question answered, unanswerable escalates → customer emailed → customer reply to supplier |
-| **Total** | **63** | |
+| **Total** | **78** | |
 
 Also: `.venv/bin/python tests/self_test.py` → **exit 0** (all 9 sections
 print measured results; evals 73 pairs, retrieval top-1/top-3 and
@@ -159,12 +160,12 @@ Uvicorn on a temp SQLite DB, `EMAIL_PROVIDER=mock`, curl only:
 - `POST /ask` (grounded) → 200, `found: true`, `grounded: true`, answer cites C25/30 + clause C-01; unanswerable question → honest "not found", `found: false`
 - **No real emails:** only mock `.eml` files under `data/mock_mail/` (git-ignored).
 
-**Not verified in this VM:** Streamlit AppTest smoke of the 7 tabs
-(streamlit is **not installed** in this VM or the system Python;
-`which streamlit` → nothing) and `docker compose up` (docker is **not
-installed**). The frontend pure helpers are covered by
-`tests/test_frontend.py` (5 tests, run without Streamlit). Do not claim
-the Streamlit UI or Docker run was verified here.
+**Verified since this was written:** Streamlit 1.67.0 + pandas + altair
+are installed in the project `.venv` (added for the §13 Accuracy check)
+and the 7 tabs ARE covered by real Streamlit AppTest renders in
+`tests/test_frontend.py` (Accuracy tab, takeoff update from a typed
+requirement, Buyer Agent email preview/edit/send, blocked send). `docker
+compose up` is still **not** verified (docker is not installed in this VM).
 
 ## 7. What is NOT done
 
@@ -350,7 +351,179 @@ Observability Dashboard (plan §9, `docs/ARCHITECTURE.md` §10):
   corrected-vs-estimate pairs (today edits overwrite in place). The
   dashboard shows "no data yet" for it — by design, not a bug.
 
-## 14. Exact next steps for the parent
+## 14. Materials takeoff not updating from a typed requirement (user report 2026-11-10 21:08)
+
+**Live report:** typing "concrete, 10 m3, Fremont" parsed Quantity 10
+correctly and the quantity reached the Buyer Agent draft, but the Plan
+& Materials takeoff table stayed at the demo plan's concrete 2.4 m3.
+The user asked: is it not updating because no LLM/VLM is used — any
+issue? Test and correct.
+
+**Root cause (missing wiring, NOT an LLM/VLM issue):**
+- `frontend/app.py::init_state` set `session_state["materials"]` to a
+  static copy of `DEMO_MATERIALS` (sample plan A-101). Tab 1 "Parse my
+  requirement" only stored `session_state["requirement"]`; "Find what I
+  need →" only navigated to tab 2. Tab 2 rendered `session_state
+  ["materials"]` in the editor. **No code path anywhere in the frontend
+  applied a parsed requirement to the takeoff table** — the typed
+  quantity was never even offered to the table.
+- The backend already had the wiring (`app/integrations.py::run_takeoff`
+  builds a takeoff from requirement items when there is no plan), but
+  the deployed app runs in Demo Mode with no backend, so that path
+  never ran — and even in live mode, when a plan WAS present,
+  `run_takeoff` returned the plan takeoff and silently discarded every
+  typed item.
+- Two parser bugs in `frontend/helpers.py::parse_requirement` made it
+  worse: (1) `item` was set to the **full raw input text** ("concrete,
+  10 m3, Fremont" — the comment even said "keep raw as item"); (2) no
+  unit was captured at all ("10 m3" → quantity 10, unit lost; the req
+  dict had no `unit` key). Location also only matched after in/near/at,
+  so "concrete, 10 m3, Fremont" parsed location "" — the "Fremont"
+  shown live came from the Tab 1 text-input default (`or "Fremont"`),
+  not from parsing. The quantity field likewise defaulted to 50 and
+  the location to "Fremont": guessed defaults presented as parsed facts.
+- **LLM/VLM verdict:** `VisionReader` (`app/vlm/plan_vision.py`) is a
+  deterministic reader of structured plan data — no image pixels are
+  read and no VLM is called (labelled local fallback); no LLM key is
+  configured anywhere (config `llm_provider`/`llm_api_key` empty by
+  default). Adding an LLM/VLM would NOT have fixed this bug — it was
+  a missing code path, and a typed quantity needs no model to reach a
+  table. No paid key was added and no real VLM is claimed.
+
+**Fix:**
+- `frontend/helpers.py::parse_requirement` rewritten: item is only the
+  item name ("concrete", "steel brackets"); quantity + unit captured
+  and normalised ("10 m3" → 10 / "m3", "50 units" → 50 / "pcs",
+  "10 x concrete" form handled); location from in/near/at OR a
+  trailing **known** place name (unknown trailing words are never
+  guessed); optional `llm_parser` plug-in hook — a callable (e.g. a
+  free local Ollama model) whose fields are used where present, with
+  any error/empty result falling back to the deterministic parse. No
+  LLM is configured by default.
+- `frontend/helpers.py::apply_requirement_to_takeoff(materials, req)`:
+  no quantity → table unchanged, never invented; matching line
+  (normalised tokens; a single token that is only part of a multi-word
+  line, "steel" vs "Steel brackets", does NOT match) → quantity/unit
+  updated, method records the override AND the old plan value;
+  new material → appended line; unit not stated → line flagged for
+  review. Every line keeps the "estimate, not a surveyed quantity"
+  label and a `source` ("sample plan" / "typed requirement").
+- `app/takeoff/engine.py`: `takeoff_line_from_requirement` +
+  `apply_requirement_to_result` (same matching rules, exported in
+  `app/takeoff/__init__.py`). `app/integrations.py::run_takeoff` now
+  applies requirement items ON TOP of a plan takeoff, and the
+  requirement-only fallback uses the engine function (stale method
+  string "no plan takeoff module yet" and `estimate_label: True`
+  replaced; confidence 0.90 for a user-stated quantity).
+- `frontend/app.py`: Parse, "Find what I need →" (re-applies after
+  the user edits the parsed fields) and "Try with a sample plan" all
+  call `apply_requirement_to_takeoff` and show the resulting note on
+  tabs 1 and 2; quantity/location defaults no longer invent values
+  (unknown quantity starts at 1 with a warning; location blank with a
+  placeholder). Demo materials in `frontend/demo_data.py` now carry
+  `source` + `estimate_label` per line.
+- **Tests:** +7 in this section (73 total, all passing; `self_test.py`
+  exit 0), incl. real AppTest end-to-end: type "concrete, 10 m3,
+  Fremont" → Parse → Plan & Materials shows concrete **10 m3** with
+  the 2.4 m3 plan value kept in the method. Before the fix the repro
+  (`/tmp/repro_takeoff.py`, kept out of the repo) confirmed item =
+  full text, no unit, takeoff stuck at 2.4 m3.
+
+## 15. Per-supplier contact + editable email preview (user update 2026-11-10 21:10)
+
+**What was already there vs what was added.** Already there: the
+backend `EmailService.draft_quote` (agent-identity opening, part +
+quantity + location + deadline + budget, contact only when sharing is
+ON) and `strip_customer_identity` (routes apply it when sharing is
+OFF); the frontend had ONE static draft email for the top 3 suppliers
+with per-supplier share toggles — but the toggles never changed the
+draft text, the draft showed no per-supplier recipient / from /
+channel, and nothing blocked sending to a supplier with no email held.
+Added in this pass:
+- `frontend/helpers.py`: `supplier_email` (extracts a real address or
+  `None` — "not public — request via email" is not an address),
+  `supplier_contact_details` (name / email / phone / address / area /
+  source; missing = `None`, never invented — demo suppliers have no
+  phone or street address), `build_quote_email` (per supplier:
+  channel email, From `BuildBuy Copilot <noreply@buildbuy.local>`
+  (config default `EMAIL_FROM`), To, subject, full body;
+  `sendable: False` + reason when the email is not held), and
+  `strip_contact_details` (mirror of the backend stripper, applied at
+  send time when sharing is OFF — even to contact details the user
+  typed into an edited draft). The preview body is byte-for-byte the
+  backend `draft_quote` output for the same inputs (OFF and ON — tested).
+- `frontend/app.py` Buyer Agent tab: one expandable card per top-3
+  supplier with contact details, how they will be contacted, the full
+  email preview, editable subject + body, Save / Reset to draft, and a
+  per-supplier Send (disabled with the reason when the email is not
+  held); "Send quote requests to top 3" sends only to sendable
+  suppliers and lists the blocked ones. Widget keys carry the sharing
+  state (`...-shared` / `...-private`) so toggling sharing rebuilds
+  the preview instead of showing stale text (a real bug found while
+  testing: Streamlit keeps widget values by key). The Suppliers tab
+  cards now also show phone/address ("not held") and the
+  how-we-contact line. `contact_sharing` lookups use `.get(..., False)`
+  so a supplier list that changes cannot KeyError the tab.
+- **Tests:** +3 in this section (73 total), incl. AppTest: preview
+  shows identity line + supplier email + channel/from; toggling
+  sharing ON puts Deepthi Jainlal / deepthiag26@gmail.com /
+  +1 341-252-9234 in the preview; editing the body changes the sent
+  text and sharing OFF strips the typed contact; a supplier with no
+  held email shows "not held" and its Send button is disabled.
+
+## 16. UI restyle — stylish, visual, colourful (user update 2026-11-10 21:16)
+
+**What changed (no functionality, label or honest-data rule changed):**
+- **Theme:** `.streamlit/config.toml` at the repo root (light theme:
+  primary `#4F46E5` indigo, background `#F8F7FF`, text `#1F2937`) +
+  custom CSS in new pure module `frontend/theme.py` (`PALETTE`,
+  `THEME_CSS`, `status_chip`, `order_chip`, `thread_chip`,
+  `journey_stepper`, `hero_html` — no Streamlit import, unit-tested
+  in `tests/test_theme.py`). The old inline `CSS` block in
+  `frontend/app.py` is deleted; the theme module is the single source.
+- **Hero:** gradient banner (indigo → violet → teal) on every tab with
+  the app name, tagline and pills ("7 tabs · one buyer workflow",
+  DEMO/LIVE mode as text, "Nothing ordered without your tap"). The mode
+  pill is honest: it says DEMO MODE in demo mode and LIVE MODE only
+  when the backend answers.
+- **Journey stepper:** the old 5-step `st.progress` bar is replaced by
+  a 9-step stepper (Requirement → Materials → Suppliers → Twin →
+  Buyer agent → Approval → Order → Delivery → Invoice) with done
+  (green ✓) / current (indigo, ring) / to-do (grey) states, driven by
+  `journey_stage()` from session state (requirement, nav, order
+  status). Every step shows its number and text label.
+- **Chips:** colour-coded status chips with text labels always kept
+  (never colour-only): best value green / cheapest blue / highest
+  quality purple on supplier cards; order statuses (PENDING amber,
+  APPROVED blue, DELIVERED teal, INVOICE_RECEIVED green, REJECTED red)
+  on My Orders; inbox thread statuses on Buyer Agent; metric statuses
+  on Accuracy; free-tier counter as info chips. Demo/live badges keep
+  their amber/green.
+- **Cards & buttons:** supplier cards have shadows and a hover lift;
+  the three choice cards keep their green/blue/purple borders with
+  gradient backgrounds; primary buttons are gradient indigo with a
+  shadow, secondary buttons white with an indigo outline; tab
+  navigation renders as pills (selected = indigo). Headings get an
+  indigo accent bar; metric cards get a coloured top border and hover
+  lift. Contrast-first: dark text on light backgrounds throughout.
+- **Real bug found and fixed by the restyle tests:** the tab
+  navigation used `index=NAV.index(session_state["nav"])` with no key.
+  When the index default changed between runs, Streamlit
+  re-initialised the radio from the new default and silently DROPPED
+  the user's tab click — AppTest showed every second navigation
+  ignored (2→3, 2→4, 3→4 all dropped on first try, retry worked).
+  The radio is now keyed (`key="nav"`, value in `session_state["nav"]`,
+  programmatic buttons set the same key then `st.rerun()`); every
+  navigation now sticks on the first try, verified by the debug
+  sequence and by the all-tabs AppTest.
+- **Tests:** +5 in this section (78 total, all passing; `self_test.py`
+  exit 0): `tests/test_theme.py` (4: palette/CSS, chip labels,
+  stepper, hero) + `test_all_seven_tabs_render_after_restyle` (real
+  AppTest: every tab renders with no exception, its heading present,
+  hero + stepper visible, DEMO labelling and the estimate label
+  intact).
+
+## 17. Exact next steps for the parent
 
 1. **Push to the GitHub repo** (repo already exists:
    https://github.com/deepthivj-aiml/buildbuy-copilot, public, empty):
@@ -363,8 +536,10 @@ Observability Dashboard (plan §9, `docs/ARCHITECTURE.md` §10):
    smoke test — Streamlit Community Cloud (frontend), Neon/Supabase
    free Postgres, Upstash/Redis free cache; set `DATABASE_URL`,
    `REDIS_URL`, `EMAIL_PROVIDER=mock` (keep mock until SMTP is a
-   deliberate decision). Record the live URL in the README (it currently
-   says "Deploy pending").
+   deliberate decision). The live URL is already in the README
+   (https://tu2tztzegjayuwzxudxbnv.streamlit.app/, verified live
+   2026-11-10 21:15); re-verify it after each push, since Streamlit
+   auto-redeploys from master.
 4. **Verify on a machine with Streamlit + Docker:** `streamlit run
    frontend/app.py` + 7-tab AppTest smoke; `docker compose up --build`
    and repeat the §6 curl flow inside Docker.

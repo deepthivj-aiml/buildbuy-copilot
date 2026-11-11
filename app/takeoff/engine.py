@@ -150,6 +150,92 @@ def compute_takeoff(plan: dict) -> TakeoffResult:
     return result
 
 
+def _material_tokens(name: str) -> set[str]:
+    """Normalised tokens: lowercased, parenthetical removed, plurals
+    singularised. Same rules as frontend/helpers.py — a typed item and
+    a takeoff line must agree on the material before a quantity is
+    applied to that line (see _materials_match)."""
+    core = re.sub(r"\(.*?\)", "", str(name or "")).lower()
+    core = re.sub(r"[^a-z0-9 ]", " ", core)
+    return {
+        tok[:-1] if tok.endswith("s") and len(tok) > 2 else tok
+        for tok in core.split()
+    }
+
+
+def _materials_match(req_item: str, line_material: str) -> bool:
+    req_tokens = _material_tokens(req_item)
+    line_tokens = _material_tokens(line_material)
+    if not req_tokens or not line_tokens:
+        return False
+    if req_tokens == line_tokens:
+        return True
+    return len(req_tokens) >= 2 and req_tokens <= line_tokens
+
+
+def takeoff_line_from_requirement(item: dict) -> TakeoffLine | None:
+    """One takeoff line from a typed requirement item
+    ({"item", "quantity", "unit"}). Returns ``None`` when no quantity
+    was given — a quantity is never invented. A user-stated quantity
+    is exact as stated (confidence 0.90), but the line is still an
+    estimate of the material needed, never a surveyed quantity."""
+    name = str(item.get("item") or "").strip()
+    quantity = item.get("quantity")
+    if quantity is None or not name:
+        return None
+    unit = str(item.get("unit") or "")
+    display = name[:1].upper() + name[1:]
+    return TakeoffLine(
+        material=display,
+        quantity=float(quantity),
+        unit=unit or "units",
+        method=(f"user-typed quantity ({quantity} {unit or 'units'})"
+                + ("" if unit else " — unit not stated, assumed units; confirm")),
+        confidence=0.90,
+        flagged=not bool(unit),
+    )
+
+
+def apply_requirement_to_result(
+        result: TakeoffResult, items: list[dict]) -> TakeoffResult:
+    """Apply typed requirement items on top of a plan takeoff.
+
+    A typed quantity for a material already in the takeoff updates
+    that line (method records the override AND the old plan value);
+    a new material appends a line; an item with no quantity is
+    skipped. This is the backend half of the 2026-11-10 fix: before
+    it, ``run_takeoff`` returned the plan takeoff and silently
+    discarded every typed quantity.
+    """
+    for item in items or []:
+        new_line = takeoff_line_from_requirement(item)
+        if new_line is None:
+            continue
+        matched = False
+        for line in result.lines:
+            if _materials_match(str(item.get("item", "")), line.material):
+                old_qty, old_unit = line.quantity, line.unit
+                line.quantity = new_line.quantity
+                if new_line.unit != "units" or not line.unit:
+                    line.unit = new_line.unit
+                line.confidence = 0.90
+                line.flagged = new_line.flagged
+                line.method = (
+                    f"user-typed quantity ({new_line.quantity} {line.unit}) — "
+                    f"overrides plan estimate of {old_qty} {old_unit}; plan "
+                    f"value kept here, not silently replaced")
+                if new_line.flagged:
+                    line.method += " (unit not stated — kept plan unit; confirm)"
+                matched = True
+                break
+        if not matched:
+            result.lines.append(new_line)
+        result.notes.append(
+            f"Typed requirement applied: {new_line.material} "
+            f"{new_line.quantity} {new_line.unit}.")
+    return result
+
+
 def verify_reconciliation(result: TakeoffResult, plan: dict) -> dict:
     """Hand-worked re-check: recompute each line independently and compare.
 

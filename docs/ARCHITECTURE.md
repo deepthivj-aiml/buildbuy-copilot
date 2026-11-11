@@ -339,20 +339,42 @@ eval_runs(id, eval_set, groundedness DECIMAL, retrieval_top1 DECIMAL,
 ## 9. Frontend — 7 tabs (Streamlit)
 
 1. **Start** — upload plan (≤10 MB) or type/photograph a requirement; parsed
-   preview editable; free-tier counter; one primary action.
+   preview editable; free-tier counter; one primary action. The parsed
+   requirement is a deterministic local parse (`frontend/helpers.py::
+   parse_requirement` — item, quantity, unit, location, deadline,
+   budget; no LLM/VLM, no key; optional `llm_parser` hook falls back
+   to the deterministic parse on any error). A typed requirement
+   updates the takeoff immediately via `apply_requirement_to_takeoff`
+   (2026-11-10 fix — before it, a typed quantity never reached the
+   table); loading a sample plan never discards a typed quantity.
 2. **Plan & Materials** — Copilot chat with dual citations or "not found";
    takeoff table with "estimate, not a surveyed quantity", confidence flags,
-   CSV export.
+   CSV export. A typed quantity for a material already in the table
+   updates that line (method keeps the old plan value, never silently
+   replaced); a new material appends a line; no quantity given means no
+   line is invented. The backend mirrors this in `app/takeoff/engine.py`
+   (`apply_requirement_to_result`) and `app/integrations.py::run_takeoff`
+   (typed items applied on top of a plan takeoff).
 3. **Suppliers & Twin** — ranked shortlist (Supplier | Unit | MOQ | Lead |
    Fit + quality + evidence), map-like distance list, twin simulator with
    what-if sliders (price/date/qty) showing cost risk AND quality risk,
    recommendation + runner-up, best-value vs cheapest vs highest-quality
-   side by side, MOQ-excluded suppliers listed with reasons.
+   side by side, MOQ-excluded suppliers listed with reasons. Supplier
+   cards show contact details (never invented — "not held" when missing)
+   and how they will be contacted (Email, from, to).
 4. **Buyer Agent** — 3-column inbox (thread list / message thread / supplier
-   info), draft email shown before sending, per-supplier contact-sharing
-   toggle (default OFF, labelled "Share my contact with this supplier"
-   with a plain-words explanation of what is shared when ON and what the
-   supplier sees when OFF), negotiation limits, Approve/Reject pane showing
+   info), per-supplier email preview shown in full before sending
+   (contact details, channel, from, to, subject, whole body — editable
+   subject + body, Save / Reset to draft, Send only after confirmation;
+   sending blocked, never guessed, when the supplier's email is not
+   held), per-supplier contact-sharing toggle (default OFF, labelled
+   "Share my contact with this supplier" with a plain-words explanation
+   of what is shared when ON and what the supplier sees when OFF) that
+   the preview reflects (OFF = "a customer", ON = name/email/phone;
+   at send time with OFF, any contact typed into an edited draft is
+   stripped by `strip_contact_details`). The preview body is
+   byte-for-byte the backend `EmailService.draft_quote` output
+   (tested). Negotiation limits, Approve/Reject pane showing
    best-value vs cheapest vs highest-quality, "we never handle payment".
    A "needs you" panel lists supplier questions the agent could not
    answer — the customer answers there and the agent sends their words
@@ -367,6 +389,24 @@ eval_runs(id, eval_set, groundedness DECIMAL, retrieval_top1 DECIMAL,
    numbers measured or labelled synthetic; "no data yet" when empty.
 7. **Settings** — contact, sharing defaults, free-tier usage, BYO key status
    (never the key value), data export/delete.
+
+**Theme (2026-11-11 restyle):** light indigo theme — `.streamlit/
+config.toml` (`primaryColor #4F46E5`, background `#F8F7FF`, text
+`#1F2937`) plus custom CSS in `frontend/theme.py` (pure helpers, no
+Streamlit import): gradient hero banner on every tab (mode pill says
+DEMO or LIVE as text), a 9-step buyer-journey stepper (Requirement →
+Materials → Suppliers → Twin → Buyer agent → Approval → Order →
+Delivery → Invoice; done/current/to-do states), colour-coded status
+chips (best value green / cheapest blue / highest quality purple /
+order and thread statuses), card-style supplier cards with coloured
+badges, gradient primary buttons, pill-style tab navigation. Colour
+is decoration only — every chip and step keeps its text label (never
+colour-only meaning), demo/synthetic data keeps its amber DEMO badge,
+and no colour implies a real result. The tab navigation is a keyed
+radio (`key="nav"`): the old `index=NAV.index(session_state["nav"])`
+pattern silently dropped every second tab click when the index default
+changed between runs (found by AppTest); a keyed widget has no moving
+default to reset to.
 
 Without a backend the frontend runs in clearly-labelled **DEMO MODE** on
 synthetic in-memory data — no paid key, no real email. With the backend up

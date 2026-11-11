@@ -85,17 +85,24 @@ DEMO_SUPPLIERS = [
     },
 ]
 
+ESTIMATE_LABEL = "estimate, not a surveyed quantity"
+
 DEMO_MATERIALS = [
     {"material": "Steel brackets", "quantity": 50, "unit": "pcs",
-     "method": "count x unit rate (plan count)", "confidence": 0.92, "flagged": False},
+     "method": "count x unit rate (plan count)", "confidence": 0.92, "flagged": False,
+     "source": "sample plan", "estimate_label": ESTIMATE_LABEL},
     {"material": "Concrete (footings)", "quantity": 2.4, "unit": "m3",
-     "method": "area x thickness (12 m2 x 0.2 m)", "confidence": 0.88, "flagged": False},
+     "method": "area x thickness (12 m2 x 0.2 m)", "confidence": 0.88, "flagged": False,
+     "source": "sample plan", "estimate_label": ESTIMATE_LABEL},
     {"material": "Timber joists", "quantity": 18, "unit": "pcs",
-     "method": "count x unit rate (plan count)", "confidence": 0.81, "flagged": False},
+     "method": "count x unit rate (plan count)", "confidence": 0.81, "flagged": False,
+     "source": "sample plan", "estimate_label": ESTIMATE_LABEL},
     {"material": "Anchor bolts M12", "quantity": 100, "unit": "pcs",
-     "method": "count x 2 per bracket", "confidence": 0.95, "flagged": False},
+     "method": "count x 2 per bracket", "confidence": 0.95, "flagged": False,
+     "source": "sample plan", "estimate_label": ESTIMATE_LABEL},
     {"material": "Plywood sheets", "quantity": 6, "unit": "sheets",
-     "method": "area / sheet area (low-res region)", "confidence": 0.58, "flagged": True},
+     "method": "area / sheet area (low-res region)", "confidence": 0.58, "flagged": True,
+     "source": "sample plan", "estimate_label": ESTIMATE_LABEL},
 ]
 
 DEMO_QA = [

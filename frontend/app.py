@@ -64,13 +64,20 @@ from accuracy import (  # noqa: E402
 )
 from helpers import (  # noqa: E402
     API_URL,
+    BUYER_CONTACT,
+    EMAIL_FROM,
+    apply_requirement_to_takeoff,
     backend_is_reachable,
+    build_quote_email,
     demo_answer,
     geocode_location,
     haversine_km,
     landed_line,
     parse_requirement,
     rank_suppliers,
+    strip_contact_details,
+    supplier_contact_details,
+    supplier_email,
     twin_risk,
 )
 
@@ -86,33 +93,16 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-CSS = """
-<style>
-.block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 1100px; }
-h1 { font-size: 1.7rem; }
-h2 { font-size: 1.25rem; margin-top: 1.2rem; }
-h3 { font-size: 1.05rem; }
-.stButton>button { min-height: 44px; font-size: 1rem; }
-.card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 14px 16px;
-        margin: 8px 0; background: #ffffff; }
-.card-best { border: 2px solid #1a7f37; background: #f0f9f1; }
-.card-cheap { border: 2px solid #0969da; background: #f0f6ff; }
-.card-quality { border: 2px solid #8250df; background: #f6f0ff; }
-.badge { display: inline-block; padding: 2px 10px; border-radius: 999px;
-         font-size: 0.8rem; font-weight: 600; }
-.badge-demo { background: #fff3cd; color: #664d03; }
-.badge-live { background: #d1e7dd; color: #0f5132; }
-.badge-warn { background: #f8d7da; color: #842029; }
-.badge-ok { background: #d1e7dd; color: #0f5132; }
-.trust { color: #555; font-size: 0.9rem; }
-.small { font-size: 0.85rem; color: #555; }
-.evidence { font-size: 0.85rem; color: #444; }
-.metric-card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 12px;
-               text-align: center; background: #fafafa; }
-.metric-num { font-size: 1.6rem; font-weight: 700; }
-</style>
-"""
-st.markdown(CSS, unsafe_allow_html=True)
+from theme import (  # noqa: E402
+    THEME_CSS,
+    hero_html,
+    journey_stepper,
+    order_chip,
+    status_chip,
+    thread_chip,
+)
+
+st.markdown(THEME_CSS, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Synthetic demo data — labelled as such everywhere it is shown.
@@ -136,6 +126,7 @@ def init_state():
     s.setdefault("scale_confirmed", False)
     s.setdefault("chat", [])
     s.setdefault("materials", [dict(m) for m in DEMO_MATERIALS])
+    s.setdefault("takeoff_note", "")
     s.setdefault("suppliers", [dict(x) for x in DEMO_SUPPLIERS])
     s.setdefault("contact_sharing", {x["name"]: False for x in DEMO_SUPPLIERS})
     s.setdefault("threads", [
@@ -174,6 +165,8 @@ def init_state():
          ]},
     ])
     s.setdefault("draft_email", "")
+    s.setdefault("quote_drafts", {})  # supplier name -> {"subject","body","edited": True}
+    s.setdefault("quote_sent", {})  # supplier name -> {"to","subject","body","channel"}
     s.setdefault("max_price", 400.0)
     s.setdefault("latest_date", date.today() + timedelta(days=5))
     s.setdefault("selected_offer", "best_value")
@@ -214,11 +207,10 @@ if not st.session_state["mode_checked"]:
 LIVE = st.session_state["live"]
 
 # ---------------------------------------------------------------------------
-# Header
+# Header — gradient hero (Start-tab style, shown on every tab for a
+# consistent identity) + buyer-journey stepper + free-tier chips.
 # ---------------------------------------------------------------------------
-st.title("🛒 BuildBuy Copilot")
-st.caption("Upload a plan or just say what you need — read the plan, estimate materials, "
-           "find nearby suppliers, simulate the purchase, negotiate, and approve one deal.")
+st.markdown(hero_html("live" if LIVE else "demo"), unsafe_allow_html=True)
 if LIVE:
     st.markdown('<span class="badge badge-live">● LIVE MODE — backend reachable at '
                 + API_URL + '</span>', unsafe_allow_html=True)
@@ -230,23 +222,51 @@ else:
                "is shown. Start the backend (`uvicorn app.main:app --port 8000`) to switch "
                "to live mode.")
 
-steps = ["Requirement", "Materials", "Suppliers", "Quotes", "Approval"]
-done = 1
-if st.session_state["requirement"]:
-    done = 2
-if st.session_state["order_status"] in ("APPROVED", "REJECTED"):
-    done = 5
-st.progress(done / len(steps), text=" → ".join(steps))
-st.caption(f"Free tier left this month: "
-           f"{FREE_TIER['plans'] - st.session_state['usage']['plans']} plan · "
-           f"{FREE_TIER['searches'] - st.session_state['usage']['searches']} supplier searches · "
-           f"{FREE_TIER['buyer_runs'] - st.session_state['usage']['buyer_runs']} buyer run")
+
+def journey_stage():
+    """0-based step of the buyer journey from session state."""
+    status = st.session_state.get("order_status", "PENDING")
+    nav_stage = {"1 · Start": 0, "2 · Plan & Materials": 1,
+                 "3 · Suppliers & Twin": 2, "4 · Buyer Agent": 3,
+                 "5 · My Orders": 4, "6 · Accuracy": 4,
+                 "7 · Settings": 0}.get(st.session_state.get("nav", "1 · Start"), 0)
+    status_stage = {"PENDING": 3, "APPROVED": 4, "REJECTED": 4,
+                    "CONFIRMED": 6, "DELIVERED": 7,
+                    "INVOICE_PENDING": 7, "INVOICE_RECEIVED": 8}.get(status, 3)
+    stage = nav_stage
+    if st.session_state.get("requirement"):
+        stage = max(stage, 1)
+    if status in ("APPROVED", "REJECTED", "CONFIRMED", "DELIVERED",
+                  "INVOICE_PENDING", "INVOICE_RECEIVED"):
+        stage = max(stage, status_stage)
+    return min(stage, 8)
+
+
+st.markdown(journey_stepper(journey_stage()), unsafe_allow_html=True)
+st.caption("Buyer journey: Requirement → Materials → Suppliers → Twin → "
+           "Buyer agent → Approval → Order → Delivery → Invoice")
+st.markdown(
+    status_chip(f"Free tier left: "
+                f"{FREE_TIER['plans'] - st.session_state['usage']['plans']} plan", "info")
+    + " " + status_chip(
+        f"{FREE_TIER['searches'] - st.session_state['usage']['searches']} supplier searches",
+        "info")
+    + " " + status_chip(
+        f"{FREE_TIER['buyer_runs'] - st.session_state['usage']['buyer_runs']} buyer run",
+        "info"),
+    unsafe_allow_html=True)
 
 NAV = ["1 · Start", "2 · Plan & Materials", "3 · Suppliers & Twin", "4 · Buyer Agent",
        "5 · My Orders", "6 · Accuracy", "7 · Settings"]
+# Keyed radio (key="nav"): the widget value lives in session_state["nav"]
+# and programmatic navigation (buttons setting session_state["nav"] then
+# st.rerun()) works. The old code used index=NAV.index(session_state
+# ["nav"]) with no key — when the index default changed between runs,
+# Streamlit re-initialised the radio from the new default and DROPPED
+# the user's tab click (found by AppTest: every second navigation was
+# silently ignored). A keyed widget has no moving default to reset to.
 nav = st.radio("Section", NAV, horizontal=True, label_visibility="collapsed",
-               index=NAV.index(st.session_state["nav"]))
-st.session_state["nav"] = nav
+               key="nav")
 
 # ---------------------------------------------------------------------------
 # Tab 1 — Start
@@ -281,46 +301,85 @@ if nav == "1 · Start":
             st.session_state["plan_name"] = "sample-plan-A-101.pdf (synthetic demo plan)"
             st.session_state["requirement"] = {
                 "raw": "steel brackets, 50 units, Fremont, by Friday, under $400",
-                "item": "steel brackets", "quantity": 50, "location": "Fremont",
+                "item": "steel brackets", "quantity": 50, "unit": "pcs",
+                "location": "Fremont",
                 "deadline": "Friday", "budget": 400.0}
-            st.success("Sample plan loaded: synthetic demo plan A-101.")
+            # The sample plan's own takeoff stays, but the typed quantity
+            # is applied to it — a plan load must never silently discard
+            # a typed quantity (2026-11-10 fix).
+            mats, note = apply_requirement_to_takeoff(
+                st.session_state["materials"], st.session_state["requirement"])
+            st.session_state["materials"] = mats
+            st.session_state["takeoff_note"] = note
+            st.success("Sample plan loaded: synthetic demo plan A-101. " + note)
     with col_b:
         st.subheader("💬 Or just tell me what you need")
         typed = st.text_area(
             "Requirement in plain words",
             placeholder="steel brackets, 50 units, Fremont, by Friday, under $400",
-            height=100)
+            height=100, key="requirement_input")
         photo = st.camera_input("Or photograph the requirement") \
             if hasattr(st, "camera_input") else None
         if photo is not None:
             st.info("Photo received (demo mode: the item description is not auto-read. "
                     "Please confirm the parsed fields below before continuing.)")
-        if st.button("Parse my requirement"):
+        if st.button("Parse my requirement", key="parse_requirement_btn"):
             if typed.strip():
-                st.session_state["requirement"] = parse_requirement(typed)
+                req = parse_requirement(typed)
+                st.session_state["requirement"] = req
+                # THE FIX (2026-11-10): a typed requirement updates the
+                # takeoff table right here. Before this, the requirement
+                # was stored and the table stayed on the static demo-plan
+                # values forever — typing "concrete, 10 m3" left the
+                # takeoff at the demo plan's 2.4 m3.
+                mats, note = apply_requirement_to_takeoff(
+                    st.session_state["materials"], req)
+                st.session_state["materials"] = mats
+                st.session_state["takeoff_note"] = note
+                st.success(note)
             else:
                 st.warning("Type a requirement first, or use the sample plan.")
 
     req = st.session_state.get("requirement")
     if req:
         st.subheader("Parsed requirement — check and edit before anything runs")
+        if req.get("quantity") is None:
+            st.warning("No quantity found in your message — please enter one. "
+                       "The takeoff cannot show a quantity you did not give.")
+        if not req.get("item"):
+            st.warning("No item found in your message — please enter one.")
         c1, c2, c3 = st.columns(3)
         with c1:
             req["item"] = st.text_input("Item", value=req.get("item") or "")
-            req["quantity"] = st.number_input("Quantity", min_value=1, value=int(req.get("quantity") or 50))
+            # No invented default: an unknown quantity starts at 1 and
+            # the warning above says to fix it (the old code defaulted
+            # to 50, which silently invented a quantity).
+            req["quantity"] = st.number_input(
+                "Quantity", min_value=1, value=int(req.get("quantity") or 1))
         with c2:
             req["location"] = st.text_input(
-                "Location (job site)", value=req.get("location") or "Fremont",
+                "Location (job site)", value=req.get("location") or "",
+                placeholder="e.g. Fremont (optional)",
                 help="Where the job is. This is NOT used for transport cost — "
                      "delivery location is a separate optional field on the "
-                     "Suppliers tab.")
+                     "Suppliers tab. Blank means no location was given — "
+                     "the old code filled in “Fremont” by default, which "
+                     "presented a guess as a parsed fact.")
             req["deadline"] = st.text_input("Deadline", value=req.get("deadline") or "")
         with c3:
             req["budget"] = st.number_input("Max budget ($)", min_value=0.0,
                                             value=float(req.get("budget") or 0.0))
         if st.session_state.get("plan_name"):
             st.caption(f"Plan attached: {st.session_state['plan_name']}")
+        if st.session_state.get("takeoff_note"):
+            st.info(st.session_state["takeoff_note"])
         if st.button("Find what I need →", type="primary"):
+            # Re-apply: the user may have edited the item / quantity
+            # above, and the takeoff must follow the edited values.
+            mats, note = apply_requirement_to_takeoff(
+                st.session_state["materials"], req)
+            st.session_state["materials"] = mats
+            st.session_state["takeoff_note"] = note
             st.session_state["usage"]["searches"] += 1
             st.session_state["nav"] = "2 · Plan & Materials"
             st.rerun()
@@ -393,8 +452,11 @@ elif nav == "2 · Plan & Materials":
             st.rerun()
     with right:
         st.subheader("Materials takeoff — estimate, not a surveyed quantity")
-        st.caption("Every line is an estimate with its method shown. "
-                   "Review flagged lines before suppliers are contacted.")
+        st.caption("Every line is an estimate with its method shown, and "
+                   "every line carries the label “estimate, not a surveyed "
+                   "quantity”. Review flagged lines before suppliers are contacted.")
+        if st.session_state.get("takeoff_note"):
+            st.info(st.session_state["takeoff_note"])
         import pandas as pd
         df = pd.DataFrame(st.session_state["materials"])
         edited = st.data_editor(
@@ -542,6 +604,15 @@ elif nav == "3 · Suppliers & Twin":
     for r in sorted(rows, key=lambda x: (x["value_rank"] is None, x["value_rank"])):
         with st.expander(f"#{r['value_rank']} {r['name']} — "
                           f"${r['landed']:.2f} landed · quality {r['quality_score']}/100"):
+            chips = []
+            if r.get("is_best_value"):
+                chips.append(status_chip("🏆 Best value", "best_value"))
+            if r.get("is_cheapest"):
+                chips.append(status_chip("💲 Cheapest", "cheapest"))
+            if r.get("is_best_quality"):
+                chips.append(status_chip("⭐ Highest quality", "quality"))
+            if chips:
+                st.markdown(" ".join(chips), unsafe_allow_html=True)
             st.write(f"**Location:** {r['location']} ({r['distance_mi']} mi) · "
                      f"**MOQ:** {r['moq']} · **Lead:** {r['lead_days']} days")
             st.write(f"**Landed breakdown ({qty} units):** {landed_line(r, qty)} · "
@@ -550,9 +621,15 @@ elif nav == "3 · Suppliers & Twin":
             for ev in r["quality_evidence"]:
                 st.write(f"- {ev}")
             st.write(f"**Contact:** {r['contact']} (source: {r['contact_source']})")
+            st.write(f"**Phone:** {r.get('phone') or 'not held'} · "
+                     f"**Address:** {r.get('address') or 'not held'} "
+                     f"(area: {r['location']})")
+            st.write(f"**How we'll contact them:** Email — from {EMAIL_FROM} "
+                     f"to {supplier_email(r) or 'not held — cannot send yet'} · "
+                     f"Full email preview + edit on the Buyer Agent tab.")
             st.write(f"**Why this rank:** {r['why']}")
             share = st.checkbox(f"Share my contact with {r['name']}",
-                                value=st.session_state["contact_sharing"][r["name"]],
+                                value=st.session_state["contact_sharing"].get(r["name"], False),
                                 key=f"share-{r['name']}")
             st.session_state["contact_sharing"][r["name"]] = share
             st.caption("Your choice, per supplier. OFF (default): the supplier "
@@ -644,46 +721,146 @@ elif nav == "4 · Buyer Agent":
     st.caption("One negotiation round only, within these limits. The agent cannot agree "
                "above the cap or after the deadline — enforced in code, not just in a prompt.")
 
-    st.subheader("Draft email — shown before anything is sent")
+    st.subheader("Emails to suppliers — preview, edit, then send")
+    st.caption("One email per supplier, shown IN FULL before anything is sent. "
+               "Each card shows the supplier's contact details (never invented — "
+               "“not held” when missing), HOW they will be contacted (channel, "
+               "from, to, subject), and the exact email body. Edit the subject "
+               "or body, save, and only then send — nothing is sent without you "
+               "seeing the final text. The agent always identifies itself as "
+               "your buying agent; your name, email and phone appear ONLY when "
+               "you toggle sharing ON for that supplier.")
     top3 = sorted(rows, key=lambda x: (x["value_rank"] is None, x["value_rank"]))[:3]
-    if not st.session_state["draft_email"]:
-        names = ", ".join(r["name"] for r in top3)
-        st.session_state["draft_email"] = (
-            f"Subject: Quote request — {qty} x {req.get('item', 'steel brackets')}\n\n"
-            f"Hello,\n\n"
-            f"I am BuildBuy Copilot, acting as the buying agent for a customer.\n\n"
-            f"I am enquiring on their behalf about {qty} x "
-            f"{req.get('item', 'steel brackets')} for a job in "
-            f"{req.get('location', 'Fremont')}, needed by {req.get('deadline', 'Friday')}.\n"
-            f"Could you please quote your best unit price, delivery cost, and lead time?\n"
-            f"Maximum total budget is ${st.session_state['max_price']:.0f}.\n\n"
-            f"Thank you,\nBuildBuy Copilot (buying agent for a customer)\n"
-            f"(Draft for: {names}. No name, email or phone is included "
-            f"unless you toggle sharing on per supplier below.)")
-    st.session_state["draft_email"] = st.text_area(
-        "Edit the draft, then send", value=st.session_state["draft_email"], height=200)
-    st.caption("**Share my contact with this supplier — your choice, per supplier.** "
-               "If ON for a supplier, the email to them includes your name "
-               "(Deepthi Jainlal), email (deepthiag26@gmail.com) and phone "
-               "(+1 341-252-9234) so they can reach you directly. If OFF "
-               "(the default), they only see “BuildBuy Copilot, buying agent "
-               "for a customer” — no name, email or phone.")
+    buyer = {
+        "name": st.session_state["settings"]["name"],
+        "email": st.session_state["settings"]["email"],
+        "phone": st.session_state["settings"]["phone"],
+    }
     for r in top3:
+        details = supplier_contact_details(r)
         share = st.checkbox(
             f"Share my contact with {r['name']}",
-            value=st.session_state["contact_sharing"][r["name"]],
-            key=f"send-share-{r['name']}")
+            value=st.session_state["contact_sharing"].get(r["name"], False),
+            key=f"send-share-{r['name']}",
+            help="OFF (default): the supplier only sees “BuildBuy Copilot, "
+                 "buying agent for a customer” — no name, email or phone. ON: "
+                 "your name, email and phone are included so they can reach "
+                 "you directly.")
         st.session_state["contact_sharing"][r["name"]] = share
+        generated = build_quote_email(
+            req, r, share_contact=share, buyer=buyer,
+            max_price=st.session_state["max_price"])
+        saved = st.session_state["quote_drafts"].get(r["name"])
+        with st.expander(
+                f"✉️ {r['name']} — "
+                f"{generated['to'] or 'email not held — cannot send'}", expanded=True):
+            st.write(f"**Contact details:** {details['name']} · "
+                     f"Email: {details['email'] or 'not held'} · "
+                     f"Phone: {details['phone'] or 'not held'} · "
+                     f"Address: {details['address'] or 'not held'}"
+                     + (f" (area: {details['area']})" if details["area"] else "")
+                     + f" · Source: {details['contact_source']}")
+            st.write(f"**How we will contact them:** Channel: Email · "
+                     f"From: {EMAIL_FROM} · "
+                     f"To: {generated['to'] or '— not held —'} · "
+                     f"Subject: {generated['subject']}")
+            if not generated["sendable"]:
+                st.warning(f"⚠ {generated['blocked_reason']} "
+                           "Add their email to the supplier record first — "
+                           "no address is ever guessed.")
+            # Widget keys carry the sharing state: Streamlit keeps a
+            # widget's value by key, so toggling sharing must create a
+            # fresh widget initialised from the regenerated preview —
+            # otherwise the preview would keep showing the old text
+            # (sharing OFF body after toggling ON, and vice versa).
+            share_tag = "shared" if share else "private"
+            subj_key = f"quote-subject-{r['name']}-{share_tag}"
+            body_key = f"quote-body-{r['name']}-{share_tag}"
+            subject = st.text_input(
+                "Subject (editable)", value=saved["subject"] if saved else generated["subject"],
+                key=subj_key)
+            body = st.text_area(
+                "Email body (editable) — this exact text is what gets sent",
+                value=saved["body"] if saved else generated["body"],
+                height=260, key=body_key)
+            if saved:
+                st.caption("✏️ Edited by you — “Reset to draft” rebuilds it "
+                           "from the requirement.")
+            if not share and any(v in body for v in
+                                 (buyer["name"], buyer["email"], buyer["phone"]) if v):
+                st.warning("Sharing is OFF for this supplier — your name / "
+                           "email / phone in the text above will be removed "
+                           "before sending.")
+            b1, b2, b3 = st.columns(3)
+            with b1:
+                if st.button("💾 Save edited email", key=f"quote-save-{r['name']}"):
+                    st.session_state["quote_drafts"][r["name"]] = {
+                        "subject": subject, "body": body, "edited": True}
+                    st.success("Saved — this exact text will be sent.")
+            with b2:
+                if st.button("↩ Reset to draft", key=f"quote-reset-{r['name']}"):
+                    st.session_state["quote_drafts"].pop(r["name"], None)
+                    for tag in ("shared", "private"):
+                        st.session_state.pop(f"quote-subject-{r['name']}-{tag}", None)
+                        st.session_state.pop(f"quote-body-{r['name']}-{tag}", None)
+                    st.rerun()
+            with b3:
+                if st.button(f"📧 Send to {r['name']}", key=f"quote-send-{r['name']}",
+                             type="primary", disabled=not generated["sendable"]):
+                    final_body = body if share else strip_contact_details(body, buyer)
+                    st.session_state["quote_sent"][r["name"]] = {
+                        "to": generated["to"], "subject": subject,
+                        "body": final_body, "channel": "email"}
+                    st.session_state["usage"]["buyer_runs"] += 1
+                    if LIVE:
+                        st.info("Live mode: sending via the backend email service.")
+                    st.success(f"Demo mode: email to {r['name']} "
+                               f"({generated['to']}) recorded as “sent” locally. "
+                               "No real email was sent. In live mode this sends "
+                               "via Gmail SMTP / Resend.")
+                    if not share and final_body != body:
+                        st.caption("Contact details were removed before sending "
+                                   "because sharing is OFF for this supplier.")
+            sent = st.session_state["quote_sent"].get(r["name"])
+            if sent:
+                st.caption(f"✅ Sent (demo record): to {sent['to']} · "
+                           f"subject “{sent['subject']}”")
     if st.button("Send quote requests to top 3", type="primary"):
-        if LIVE:
-            st.info("Live mode: sending via the backend email service.")
-        else:
+        sent_names, blocked_names = [], []
+        for r in top3:
+            generated = build_quote_email(
+                req, r, share_contact=st.session_state["contact_sharing"].get(r["name"], False),
+                buyer=buyer, max_price=st.session_state["max_price"])
+            if not generated["sendable"]:
+                blocked_names.append(f"{r['name']} ({generated['blocked_reason']})")
+                continue
+            share_tag = ("shared" if st.session_state["contact_sharing"].get(r["name"], False)
+                         else "private")
+            body = st.session_state.get(
+                f"quote-body-{r['name']}-{share_tag}", generated["body"])
+            subject = st.session_state.get(
+                f"quote-subject-{r['name']}-{share_tag}", generated["subject"])
+            if not st.session_state["contact_sharing"].get(r["name"], False):
+                body = strip_contact_details(body, buyer)
+            st.session_state["quote_sent"][r["name"]] = {
+                "to": generated["to"], "subject": subject,
+                "body": body, "channel": "email"}
+            sent_names.append(f"{r['name']} ({generated['to']})")
+        if sent_names:
             st.session_state["usage"]["buyer_runs"] += 1
-            st.success("Demo mode: draft recorded as “sent” locally. "
-                       "No real email was sent. In live mode this sends via Gmail SMTP / Resend.")
-            for t in st.session_state["threads"]:
-                if t["status"] == "no reply":
-                    pass  # no reply stays no reply — never presented as a quote
+            if LIVE:
+                st.info("Live mode: sending via the backend email service.")
+            st.success("Demo mode: recorded as “sent” locally — no real email "
+                       "was sent. In live mode these send via Gmail SMTP / Resend: "
+                       + "; ".join(sent_names))
+        if blocked_names:
+            st.warning("Not sent — email not held, no address guessed: "
+                       + "; ".join(blocked_names))
+        if not sent_names and not blocked_names:
+            st.info("No suppliers to contact.")
+        for t in st.session_state["threads"]:
+            if t["status"] == "no reply":
+                pass  # no reply stays no reply — never presented as a quote
 
     st.subheader("Inbox")
     col_list, col_thread, col_info = st.columns([1, 2, 1])
@@ -692,10 +869,8 @@ elif nav == "4 · Buyer Agent":
         sel = st.radio("Thread", [t["supplier"] for t in st.session_state["threads"]],
                        label_visibility="collapsed")
         for t in st.session_state["threads"]:
-            badge = {"replied": "🟢 replied", "sent": "🔵 sent",
-                     "no reply": "🟠 no reply", "agreed": "✅ agreed",
-                     "needs_customer": "🟡 needs you"}[t["status"]]
-            st.write(f"**{t['supplier']}** — {badge}")
+            st.markdown(f"**{t['supplier']}** — {thread_chip(t['status'])}",
+                        unsafe_allow_html=True)
             st.caption(t["messages"][-1][1][:60] + "…")
     thread = next(t for t in st.session_state["threads"] if t["supplier"] == sel)
     with col_thread:
@@ -810,6 +985,7 @@ elif nav == "5 · My Orders":
             continue
         with st.expander(f"{order['id']} — {order['item']} · {order['supplier']} · "
                           f"{order['status']} · ${order['total']:.2f}", expanded=True):
+            st.markdown(order_chip(order["status"]), unsafe_allow_html=True)
             reached = [s for s in TIMELINE if s in order["timeline"]]
             st.write(" → ".join(
                 f"**{s}**" if s in reached else s for s in TIMELINE))
@@ -975,6 +1151,15 @@ elif nav == "6 · Accuracy":
             })
         st.dataframe(pd.DataFrame(metric_rows), use_container_width=True,
                      hide_index=True)
+        st.markdown(
+            " ".join(
+                status_chip(
+                    f"{m['name']}: "
+                    f"{'✅ ok' if m.get('status') == 'ok' else ('⚠ ALERT' if m.get('status') == 'alert' else '— no data yet')}",
+                    {"ok": "ok", "alert": "warn", "no_data": "nodata"}.get(
+                        m.get("status", "no_data"), "nodata"))
+                for m in dash["metrics"]),
+            unsafe_allow_html=True)
 
         # --- 2. Headline cards ------------------------------------------
         st.subheader("Headline — the 4 numbers to glance at")
