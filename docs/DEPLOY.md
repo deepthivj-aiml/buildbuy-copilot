@@ -13,7 +13,7 @@ sharing the link.
 |---|---|---|---|
 | App hosting | **Streamlit Community Cloud** (free) | Render free tier (web service) | Streamlit: 1 GB RAM, sleeps after inactivity, public repo required. Render free: 750 hrs/mo, spins down after 15 min idle, 512 MB RAM |
 | API (if split from Streamlit) | Render free tier (FastAPI) | Railway trial / Fly.io free allowance | Same spin-down limits; **v1 decision: single Streamlit app + FastAPI mounted inside it, one deploy** |
-| Database | **Neon free tier (PostgreSQL, 0.25 GB) or Supabase free tier** | DuckDB file in the repo (demo only) | Free tiers have storage/row limits; demo data is tiny (synthetic) |
+| Database | **None — live data only (2026-11-10).** No working database; `app/db/` is unused legacy code, future storage only. The user's records are the Excel shortlist download and the emails to deepthiag26@gmail.com. | — | Nothing is stored; close the tab and the session is gone — download the Excel / `.eml` files first. (A Neon/Supabase free tier was the *planned* store before the live-data-only change; it is not used.) |
 | Cache | **Upstash free tier (Redis, 10k cmds/day) or Redis Cloud 30 MB free** | In-memory dict (single-instance only) | Free tiers are small — cache is for repeat questions, not a data store |
 | Email (v1) | **Gmail SMTP via the saved Google login (deepthiag26@gmail.com)** | Resend free tier (100 emails/day) | Gmail: daily sending limits (~500/day) and spam-filter risk on a new sender; Resend: 100/day free, needs domain verification for production |
 | Static site / landing | GitHub Pages (free) | Vercel free tier | Static only; no server |
@@ -52,8 +52,10 @@ Use only if the API is split from the Streamlit app.
 2. Build command: `pip install -r requirements.txt`
    Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 3. Environment variables (Render dashboard, never in the repo):
-   `DATABASE_URL` (Neon/Supabase free tier), `EMAIL_PROVIDER=mock`
-   (until real email is deliberately enabled), `LLM_API_KEY` (optional).
+   `EMAIL_PROVIDER=mock` (until real email is deliberately enabled),
+   `LLM_API_KEY` (optional). **Do not set `DATABASE_URL` or
+   `STORAGE_ENABLED=true`** — the app is live-data-only by design;
+   the stored-data API is legacy and unused.
 4. Set the Streamlit app's `API_URL` secret to the Render URL.
 5. Note the free-tier spin-down: the first request after 15 min idle is
    slow. That is expected and stated in the README.
@@ -72,7 +74,17 @@ Use only if the API is split from the Streamlit app.
 5. **Approval gate:** start a buyer run (mocked email by default — no real
    email is sent) → draft shown before sending → **no order is created
    until you tap Approve**.
-6. **Health:** `GET /health` on the API returns `{"status": "ok"}`.
+6. **Live contact flow:** on the Buyer Agent tab click
+   **"📧 Contact Bay Steel Supply — review & approve"** → the approval
+   panel opens and **nothing is sent** → click **"Cancel — send
+   nothing"** and confirm nothing was sent → click Contact again,
+   **"✅ Approve & send"** → the supplier email is recorded and the
+   user email (quotation + supplier details) appears under "Emails to
+   you this session". On Suppliers & Twin, click **"⬇ Download
+   shortlist as Excel (.xlsx)"** and open the file — it has 22 columns
+   and one row per shortlisted supplier.
+7. **Health:** `GET /health` on the API returns `{"status": "ok"}` and
+   `"storage": "none — live, session-only"`.
 
 If any step fails, do not share the link — file it as an issue and fix it
 (see `docs/UAT.md`).

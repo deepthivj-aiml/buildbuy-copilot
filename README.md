@@ -15,6 +15,17 @@ deal to approve. Nothing is ordered or paid without your tap.
   The app runs in **Demo Mode** (synthetic data, no real email) until
   a backend is deployed.
 
+> **Live data only — no storage (2026-11-10).** The app works on live
+> data in the session only: a requirement, its takeoff, shortlist,
+> twin simulation and buyer emails are computed live from your input
+> and are **not stored anywhere**. There is no working database —
+> Postgres / SQLite code exists in `app/db/` only as unused legacy
+> code marked "future storage", and the live flow never calls it.
+> Close the tab and the session is gone. Shortlists are exported as
+> Excel, and quotations + contacted supplier details are emailed to
+> you — see [Step 3](#step-3--suppliers--twin-pick-on-cost-and-quality)
+> and [Step 4](#step-4--buyer-agent-check-the-email-then-send) below.
+
 **For:** freelance site engineers, solo architects, 1–3-person
 contractors, small shop owners — anyone who needs materials for one
 job this week, has no buying team, and cannot afford a late delivery
@@ -77,9 +88,10 @@ streamlit run frontend/app.py --server.port 8501
 | API docs | http://localhost:8000/docs | FastAPI Swagger UI |
 | API health | http://localhost:8000/health | `{"status": "ok"}` |
 
-Without Docker the database is the local SQLite file and the cache is
-the in-memory fallback if Redis is not running. Without the backend,
-the frontend runs in clearly-labelled **Demo Mode** on synthetic data.
+Without Docker there is **no database at all** — live data only, in
+the session (see the banner above); the cache is the in-memory
+fallback if Redis is not running. Without the backend, the frontend
+runs in clearly-labelled **Demo Mode** on synthetic data.
 
 ### Step 3 (alternative) — Run it with Docker
 
@@ -95,8 +107,8 @@ docker compose down -v     # stops AND wipes local data — only when you mean i
 |---|---|
 | `api` (FastAPI) | `8000` |
 | `frontend` (Streamlit) | `8501` |
-| `db` (Postgres 16) | `5432` |
-| `redis` | `6379` |
+| `db` (Postgres 16) | `5432` | legacy only — the live flow never uses it |
+| `redis` | `6379` | cache only (optional) |
 
 ### Step 4 — Check it works
 
@@ -163,6 +175,13 @@ tracked or auto-detected. Then click **"Find what I need →"**.
   means **"excl. transport"**. Suppliers whose MOQ is above your
   quantity are excluded, with the reason shown.
 - Click **"Contact top 3 suppliers →"** to move on.
+- **Download the shortlist as Excel:** click
+  **"⬇ Download shortlist as Excel (.xlsx)"** — a real `.xlsx` with
+  one row per shortlisted supplier (rank, name, location, distance,
+  unit price, landed cost + breakdown, quality /100 + evidence, lead
+  time, MOQ, best-value / cheapest / highest-quality flags, official
+  email, phone, address, contact source). Take the file with you —
+  nothing is stored in the app.
 
 ### Step 4 — Buyer Agent: check the email, then send
 
@@ -182,8 +201,22 @@ For each of the top 3 suppliers you see, **before anything is sent**:
    supplier"** is OFF by default (the email then says only
    "a customer"). Turn it ON per supplier to include your name,
    email and phone. The preview updates to match.
-6. Click **"📧 Send to …"** per supplier, or **"Send quote requests
-   to top 3"** (sends only to suppliers with an email held).
+6. Click **"📧 Contact … — review & approve"** per supplier, or
+   **"Contact top 3 suppliers — review & approve"**. Clicking
+   Contact **sends nothing** — it opens an approval panel showing
+   the supplier's details, how they will be contacted, the exact
+   email, and a preview of the email **you** will receive.
+   Edit the subject/body again if you want, then click
+   **"✅ Approve & send"** — only then does the message go to the
+   supplier's **official email**, and the quotation + contacted
+   supplier details go to **your email (deepthiag26@gmail.com)**.
+   **"Cancel — send nothing"** sends nothing at all. A supplier
+   with no official email held shows
+   **"no official email held — cannot contact"** and is never emailed.
+   In Demo Mode the emails are recorded in the session (downloadable
+   as `.eml` under "Emails to you this session") and the panel says
+   clearly **"no real email sent — demo"**; a real send needs a
+   backend with `EMAIL_PROVIDER=smtp` configured.
 
 **One negotiation round** runs within the limits you set. Then the
 **Approve / Reject** pane shows the best deal and the runner-up —
@@ -202,7 +235,10 @@ answered straight from the requirement.
 Full timeline: requirement → quotes → approval → order → delivery →
 invoice. **"📧 Chase delivery"** follows up by email;
 **"✓ Mark delivered"** is a human check (the app cannot prove
-arrival). **"Export order (JSON)"** downloads the records.
+arrival). **"Export order (JSON)"** downloads the records, and the
+Buyer Agent tab also offers the shortlist as Excel — because nothing
+is stored, **download the files you want to keep before closing the
+tab**.
 
 Invoices are recorded **only from supplier-supplied data** — an
 invoice needs a real `invoice_number` and `amount`; nothing is
@@ -273,14 +309,20 @@ flowchart TD
     AGENTS --> MAIL[Email — quote, negotiate, chase]
     API --> CACHE[Semantic cache — Redis optional]
     API --> EVAL[Eval harness + Accuracy dashboard]
-    API --> DB[(PostgreSQL / DuckDB)]
+    API --> LIVE[Live session only — no storage]
+    API --> XL[Excel export of the shortlist]
 ```
 
 Two invariants hold everywhere: **never pay** (no payment tool exists
 in the codebase) and **never order without approval** (the graph
 cannot reach `Order` without a persisted `ApprovalRequest` in
-APPROVED status). Full architecture, data model, API list and the
-agentic graph: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+APPROVED status). A third, since 2026-11-10: **live data only, no
+storage** — the user journey never reads or writes a database; the
+DB code in `app/db/` is unused legacy, and the live contact flow
+lives in `app/live.py` (session-only, approval-gated, user email
+included) with Excel export in `app/records/excel.py`. Full
+architecture, data flow, API list and the agentic graph:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 **Modules — rebuild one alone:** every module has its own folder,
 public interface and test file, and can be rebuilt without touching
@@ -317,15 +359,17 @@ Streamlit AppTest
 ## 6. Testing
 
 ```bash
-pytest -v                              # all tests (temp SQLite DB, mock email)
+pytest -v                              # all tests (mock email, no DB)
 docker compose exec api pytest         # same, inside Docker
 python tests/self_test.py              # measured end-to-end summary, exit 0
 ```
 
-**86 passed, 0 failed, 0 skipped.** Tests use a
-temp SQLite DB and the mock email backend — no real email, no network,
-no invented data. CI (`.github/workflows/ci.yml`) runs pytest on every
-push/PR with Python 3.12.
+**101 passed, 0 failed, 0 skipped** (2026-11-10, live-data-only
+refactor: 86 before + 15 new in `tests/test_live.py` + the updated
+approval-flow send test). Tests use the mock email backend and **no
+database** — no real email, no network, no invented data. CI
+(`.github/workflows/ci.yml`) runs pytest on every push/PR with
+Python 3.12.
 
 Per-module test commands are in [`docs/MODULES.md`](docs/MODULES.md);
 measured results per file are in
@@ -348,8 +392,10 @@ Manage app for a fresh clone.
 Space needs PRO ($9/month), and the user chose Streamlit only — do
 not pay for PRO or create a Space without a new explicit instruction.
 
-Free-tier limits: Streamlit sleeps after inactivity; free DB/cache
-tiers are small; Gmail has daily sending limits. Full plan + smoke
+Free-tier limits: Streamlit sleeps after inactivity; Gmail has daily
+sending limits. The app has no storage by design — if you close the
+tab, the session (requirement, shortlist, emails) is gone; download
+the Excel shortlist and the `.eml` records first. Full plan + smoke
 test: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Common errors
@@ -367,6 +413,9 @@ test: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## 8. Honest limits
 
+- **Live data only, no storage.** Nothing is saved: no requirement,
+  shortlist, order or metric is written to a database. Close the tab
+  and it is gone — download the Excel shortlist / `.eml` emails first.
 - No real supplier contacts, quotes, ratings, or invoices are invented.
 - Quantities are **estimates, not surveyed measurements**.
 - No payment is handled; the buyer pays the supplier directly.
@@ -375,8 +424,9 @@ test: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 - Nothing is ordered, confirmed, or paid without your tap.
 - Supplier quality scores are shown only with their evidence; no
   rating is ever invented for a real supplier.
-- Free-tier limits apply on deploy (Streamlit sleep, small free
-  DB/cache tiers, Gmail daily sending limits).
+- Free-tier limits apply on deploy (Streamlit sleep, Gmail daily
+  sending limits; no DB/cache tiers are used — the app is
+  live-data-only by design).
 - No LLM/VLM key is configured by default; the plan reader is a
   deterministic local fallback (see Skills Mapping, skill 1 and 6,
   and [§3](#3-skills-mapping)).

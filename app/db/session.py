@@ -1,7 +1,14 @@
-"""Database session / engine helpers.
+"""Database session / engine helpers — LEGACY / FUTURE STORAGE ONLY.
 
-SQLite locally (default), Postgres via ``DATABASE_URL`` in deploy.
-Same SQLAlchemy code runs on both.
+Live-data-only (2026-11-10): the live flow (``app/live.py`` + the
+Streamlit session) NEVER imports or calls this module — no table is
+created, no row is read or written, because there is no storage to
+store in. This module exists only for the legacy stored-data API
+(``app/api/routes.py``) and the internal eval / observability
+rollups, which tests call explicitly via ``init_db()``. It is kept,
+not deleted, so those internal paths still work — but the deployed
+app does not use it. ``init_db()`` runs on backend startup ONLY when
+``STORAGE_ENABLED=true`` (see ``app/main.py``).
 """
 
 from __future__ import annotations

@@ -37,6 +37,24 @@ from datetime import date, timedelta
 # Frontend modules (same directory): pure helpers + synthetic demo data.
 # sys.path bootstrap so `streamlit run frontend/app.py` finds them.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Live-data-only modules (app/live.py is stdlib-only; app/records/excel.py
+# needs openpyxl only). The frontend imports them directly so the live
+# contact + Excel flows use the SAME code as the backend endpoint
+# POST /live/contact — no second, drifting implementation.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from app.live import (  # noqa: E402
+        USER_EMAIL,
+        build_eml,
+        build_user_summary_email,
+        contact_supplier,
+        contact_suppliers_bulk,
+    )
+    from app.records.excel import shortlist_to_excel  # noqa: E402
+    LIVE_MODULES_AVAILABLE = True
+except Exception:  # noqa: BLE001 - Excel/contact fall back to session-only text
+    LIVE_MODULES_AVAILABLE = False
+    USER_EMAIL = "deepthiag26@gmail.com"
 from demo_data import (  # noqa: E402
     DEMO_ACCURACY,
     DEMO_COST_PER_JOB,
@@ -163,6 +181,18 @@ def init_state():
     s.setdefault("draft_email", "")
     s.setdefault("quote_drafts", {})  # supplier name -> {"subject","body","edited": True}
     s.setdefault("quote_sent", {})  # supplier name -> {"to","subject","body","channel"}
+    # Live-data-only contact flow (2026-11-10): nothing is sent without
+    # approval. "Contact" sets contact_pending (supplier name, or
+    # "__bulk__"); the approval panel below the email cards shows the
+    # exact email + the user-email preview, and only "Approve & send"
+    # sends. sent_keys is the in-memory idempotency set for this
+    # session — closing the session clears it (no storage). user_emails
+    # is the record of quotation + supplier-details emails sent to the
+    # user (deepthiag26@gmail.com) in this session.
+    s.setdefault("contact_pending", None)
+    s.setdefault("user_emails", [])
+    s.setdefault("sent_emails", [])
+    s.setdefault("sent_keys", set())
     s.setdefault("max_price", 400.0)
     s.setdefault("latest_date", date.today() + timedelta(days=5))
     s.setdefault("selected_offer", "best_value")
@@ -232,6 +262,11 @@ else:
     st.caption("Demo data is synthetic only. No real supplier, quote, contact, or rating "
                "is shown. Start the backend (`uvicorn app.main:app --port 8000`) to switch "
                "to live mode.")
+    st.caption("**Live-data-only:** this app stores nothing — no database, no "
+               "stored requirements, suppliers, shortlists or orders. Everything "
+               "is computed live in this session from your input and cleared "
+               "when the session ends. The supplier records shown are synthetic "
+               "demo records until a real supplier directory is connected.")
 
 
 def journey_stage(nav):
@@ -625,6 +660,18 @@ elif nav == "3 · Suppliers & Twin":
                      "Unit ($)": st.column_config.NumberColumn("Unit ($)", format="$%.2f"),
                      "Landed ($)": st.column_config.NumberColumn("Landed ($)", format="$%.2f"),
                  })
+    # Excel download (2026-11-10, live-data-only): the shortlist as a
+    # real .xlsx — same rows as the table above, computed live in this
+    # session. No storage is involved; the file is built on the spot.
+    if LIVE_MODULES_AVAILABLE:
+        _xlsx = shortlist_to_excel(rows, req, delivery_location)
+        st.download_button(
+            "⬇ Download shortlist as Excel (.xlsx)", data=_xlsx,
+            file_name="buildbuy-shortlist.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    else:
+        st.warning("Excel export is unavailable (live modules failed to load) — "
+                   "the CSV export on the Plan & Materials tab still works.")
     st.caption("Total landed cost = unit price × quantity + transport + taxes/fees — "
                "the breakdown per supplier is in the cards below. “excl. transport” "
                "means no delivery location was typed, so transport is not in the total. "
@@ -932,69 +979,255 @@ elif nav == "4 · Buyer Agent":
                         st.session_state.pop(f"quote-body-{r['name']}-{tag}", None)
                     st.rerun()
             with b3:
-                # Secondary: the section's one primary action is the
-                # bulk "Send quote request(s)" button below.
-                if st.button(f"📧 Send to {r['name']}", key=f"quote-send-{r['name']}",
+                # LIVE-DATA-ONLY contact flow (2026-11-10): this button
+                # does NOT send. It opens the approval panel below the
+                # email cards ("Approve before sending"), which shows
+                # the supplier details, the exact email, and the
+                # user-email preview — and only "Approve & send" there
+                # sends anything. Nothing is sent without approval.
+                if st.button(f"📧 Contact {r['name']} — review & approve",
+                             key=f"quote-send-{r['name']}",
                              disabled=not generated["sendable"]):
-                    final_body = body if share else strip_contact_details(body, buyer)
-                    st.session_state["quote_sent"][r["name"]] = {
-                        "to": generated["to"], "subject": subject,
-                        "body": final_body, "channel": "email"}
-                    st.session_state["usage"]["buyer_runs"] += 1
-                    if LIVE:
-                        st.info("Live mode: sending via the backend email service.")
-                    st.success(f"Demo mode: email to {r['name']} "
-                               f"({generated['to']}) recorded as “sent” locally. "
-                               "No real email was sent. In live mode this sends "
-                               "via Gmail SMTP / Resend.")
-                    if not share and final_body != body:
-                        st.caption("Contact details were removed before sending "
-                                   "because sharing is OFF for this supplier.")
+                    st.session_state["contact_pending"] = r["name"]
+                    st.rerun()
             sent = st.session_state["quote_sent"].get(r["name"])
             if sent:
                 st.caption(f"✅ Sent (demo record): to {sent['to']} · "
                            f"subject “{sent['subject']}”")
-    _send_label = ("Send quote requests to top 3" if len(_sendable) == 3
-                   else f"Send quote request{'s' if len(_sendable) != 1 else ''} "
-                        f"({len(_sendable)} sendable supplier"
-                        f"{'' if len(_sendable) == 1 else 's'})")
-    if st.button(_send_label, type="primary"):
-        sent_names, blocked_names = [], []
-        for r in top3:
-            generated = build_quote_email(
-                req, r, share_contact=st.session_state["contact_sharing"].get(r["name"], False),
-                buyer=buyer, max_price=st.session_state["max_price"])
-            if not generated["sendable"]:
-                blocked_names.append(f"{r['name']} ({generated['blocked_reason']})")
-                continue
-            share_tag = ("shared" if st.session_state["contact_sharing"].get(r["name"], False)
-                         else "private")
-            _version = st.session_state.get("quote_draft_version", {}).get(r["name"], 0)
-            body = st.session_state.get(
-                f"quote-body-{r['name']}-{share_tag}-v{_version}", generated["body"])
-            subject = st.session_state.get(
-                f"quote-subject-{r['name']}-{share_tag}-v{_version}", generated["subject"])
-            if not st.session_state["contact_sharing"].get(r["name"], False):
-                body = strip_contact_details(body, buyer)
+    # --- Live-data-only contact helpers (2026-11-10) -----------------
+    def _session_send(to, subject, body):
+        """Session sender: records one email in this session only and
+        returns a mock_sent result. Demo Mode: NO real email is sent —
+        the record (with .eml download below) is the proof of what
+        would be sent. When the backend runs with SMTP configured,
+        the same flow sends for real via POST /live/contact
+        (app/live.py + EmailService) — same code, same texts."""
+        st.session_state["sent_emails"].append(
+            {"to": to, "subject": subject, "body": body,
+             "mode": "session-record — no real email sent"})
+        return {"status": "mock_sent", "mode": "session-record"}
+
+    def _edited_quote(r, generated):
+        """Final edited subject/body for one supplier: the textbox
+        values when present, else the saved draft, else the generated
+        draft."""
+        share = st.session_state["contact_sharing"].get(r["name"], False)
+        share_tag = "shared" if share else "private"
+        _version = st.session_state.get("quote_draft_version", {}).get(r["name"], 0)
+        saved = st.session_state["quote_drafts"].get(r["name"])
+        body = st.session_state.get(
+            f"quote-body-{r['name']}-{share_tag}-v{_version}",
+            saved["body"] if saved else generated["body"])
+        subject = st.session_state.get(
+            f"quote-subject-{r['name']}-{share_tag}-v{_version}",
+            saved["subject"] if saved else generated["subject"])
+        return subject, body
+
+    def _do_contact_one(r, generated):
+        """Run the approval-gated contact for ONE supplier through
+        app.live. Returns the result dict (sent / blocked / duplicate).
+        Records quote_sent + the user email in this session."""
+        subject, body = _edited_quote(r, generated)
+        share = st.session_state["contact_sharing"].get(r["name"], False)
+        if not LIVE_MODULES_AVAILABLE:
+            return {"status": "blocked",
+                    "reason": "Live contact modules failed to load."}
+        result = contact_supplier(
+            requirement=req, materials=st.session_state["materials"],
+            supplier=r, subject=subject, body=body, approved=True,
+            share_contact=share, buyer=buyer, send_email=_session_send,
+            sent_keys=st.session_state["sent_keys"])
+        if result["status"] in ("sent", "mock_sent"):
             st.session_state["quote_sent"][r["name"]] = {
-                "to": generated["to"], "subject": subject,
-                "body": body, "channel": "email"}
-            sent_names.append(f"{r['name']} ({generated['to']})")
-        if sent_names:
+                "to": result["supplier"]["to"],
+                "subject": result["supplier"]["subject"],
+                "body": result["supplier"]["body"], "channel": "email"}
+            st.session_state["user_emails"].append(result["user_email"])
             st.session_state["usage"]["buyer_runs"] += 1
-            if LIVE:
-                st.info("Live mode: sending via the backend email service.")
-            st.success("Demo mode: recorded as “sent” locally — no real email "
-                       "was sent. In live mode these send via Gmail SMTP / Resend: "
-                       + "; ".join(sent_names))
-        if blocked_names:
-            st.warning("Not sent — email not held, no address guessed: "
-                       + "; ".join(blocked_names))
-        if not sent_names and not blocked_names:
-            st.info("No suppliers to contact.")
-        for t in st.session_state["threads"]:
-            if t["status"] == "no reply":
-                pass  # no reply stays no reply — never presented as a quote
+        return result
+
+    _send_label = ("Contact top 3 suppliers — review & approve" if len(_sendable) == 3
+                   else f"Contact {_sendable and len(_sendable) or 0} sendable supplier"
+                        f"{'' if len(_sendable) == 1 else 's'} — review & approve")
+    if st.button(_send_label, type="primary"):
+        # Bulk contact also needs approval: open the approval panel
+        # (same panel as the per-supplier Contact button) instead of
+        # sending immediately.
+        st.session_state["contact_pending"] = "__bulk__"
+        st.rerun()
+
+    # --- Approval panel (2026-11-10, live-data-only) ------------------
+    # NOTHING is sent from this tab without this panel: it shows the
+    # supplier details, the exact email to be sent (already editable
+    # in the cards above), and the email the USER will receive
+    # (quotation + contacted supplier details). "Approve & send" is
+    # the only send path; "Cancel" sends nothing.
+    pending = st.session_state.get("contact_pending")
+    if pending:
+        st.subheader("Approve before sending — nothing is sent yet")
+        if pending == "__bulk__":
+            _bulk = [r for r in top3 if _previews[r["name"]]["sendable"]]
+            st.write(f"**{len(_bulk)} supplier(s) will be contacted:** "
+                     + ", ".join(f"{r['name']} ({_previews[r['name']]['to']})"
+                                 for r in _bulk))
+            for r in _bulk:
+                _subj, _body = _edited_quote(r, _previews[r["name"]])
+                st.write(f"- **{r['name']}** — subject “{_subj}” · "
+                         f"landed ${r['landed']:.2f} · "
+                         f"quality {r['quality_score']}/100 · lead {r['lead_days']}d")
+            _preview = build_user_summary_email(
+                requirement=req, materials=st.session_state["materials"],
+                contacted=[{"supplier": r,
+                            "details": {"phone": r.get("phone"),
+                                        "address": r.get("address"),
+                                        "area": r.get("location")},
+                            "to": _previews[r["name"]]["to"],
+                            "subject": _edited_quote(r, _previews[r["name"]])[0],
+                            "body": _edited_quote(r, _previews[r["name"]])[1],
+                            "landed": r.get("landed"),
+                            "quality": r.get("quality_score"),
+                            "lead_days": r.get("lead_days"),
+                            "sent_status": "to be sent"}
+                           for r in _bulk],
+                user_name=buyer["name"]) if LIVE_MODULES_AVAILABLE else None
+            if _preview:
+                st.write(f"**Email to you ({_preview['to']}) — preview:**")
+                st.text_area("User email preview", value=_preview["body"],
+                             height=200, key="bulk-user-email-preview", disabled=True)
+        else:
+            _r = by_name.get(pending)
+            if _r is not None:
+                _gen = _previews[_r["name"]]
+                _subj, _body = _edited_quote(_r, _gen)
+                _det = supplier_contact_details(_r)
+                st.write(f"**Supplier:** {_r['name']} · "
+                         f"official email: {_gen['to'] or 'not held'} · "
+                         f"phone: {_det['phone'] or 'not held'} · "
+                         f"address: {_det['address'] or 'not held'}"
+                         + (f" (area: {_det['area']})" if _det["area"] else ""))
+                st.write(f"**How:** Channel: Email · From: {EMAIL_FROM} · "
+                         f"To: {_gen['to'] or '— not held —'} · Subject: {_subj}")
+                st.text_area("Email to supplier (final text — edit it in the "
+                             "card above, then approve here)",
+                             value=_body, height=180,
+                             key="approve-supplier-email-preview", disabled=True)
+                _preview = build_user_summary_email(
+                    requirement=req, materials=st.session_state["materials"],
+                    contacted=[{"supplier": _r,
+                                "details": {"phone": _r.get("phone"),
+                                            "address": _r.get("address"),
+                                            "area": _r.get("location")},
+                                "to": _gen["to"], "subject": _subj, "body": _body,
+                                "landed": _r.get("landed"),
+                                "quality": _r.get("quality_score"),
+                                "lead_days": _r.get("lead_days"),
+                                "sent_status": "to be sent"}],
+                    user_name=buyer["name"]) if LIVE_MODULES_AVAILABLE else None
+                if _preview:
+                    st.write(f"**Email to you ({_preview['to']}) — preview:**")
+                    st.text_area("User email preview", value=_preview["body"],
+                                 height=200, key="single-user-email-preview",
+                                 disabled=True)
+        st.caption("Approval is required: the supplier email and the user "
+                   "email are sent only when you click “Approve & send”. "
+                   "In this session the emails are recorded here and "
+                   "downloadable as .eml — no real email is sent in Demo "
+                   "Mode. With SMTP configured (backend, EMAIL_PROVIDER=smtp) "
+                   "the same flow sends them for real.")
+        _ap1, _ap2 = st.columns(2)
+        with _ap1:
+            if st.button("✅ Approve & send", type="primary",
+                         key="approve-send-btn"):
+                if pending == "__bulk__":
+                    _contacts = []
+                    for r in top3:
+                        if not _previews[r["name"]]["sendable"]:
+                            continue
+                        _subj, _body = _edited_quote(r, _previews[r["name"]])
+                        _contacts.append({"supplier": r, "subject": _subj,
+                                          "body": _body})
+                    if not LIVE_MODULES_AVAILABLE:
+                        st.error("Live contact modules failed to load — nothing sent.")
+                    else:
+                        _res = contact_suppliers_bulk(
+                            requirement=req,
+                            materials=st.session_state["materials"],
+                            contacts=_contacts, approved=True,
+                            share_contact_by_name={
+                                r["name"]: st.session_state["contact_sharing"].get(r["name"], False)
+                                for r in top3},
+                            buyer=buyer, send_email=_session_send,
+                            sent_keys=st.session_state["sent_keys"])
+                        for s in _res["sent"]:
+                            st.session_state["quote_sent"][s["name"]] = {
+                                "to": s["to"], "subject": s["subject"],
+                                "body": s["body"], "channel": "email"}
+                        if _res["user_email"]:
+                            st.session_state["user_emails"].append(_res["user_email"])
+                        if _res["sent"]:
+                            st.session_state["usage"]["buyer_runs"] += 1
+                            st.success("Approved & sent (recorded in this session — "
+                                       "no real email was sent in Demo Mode): "
+                                       + "; ".join(f"{s['name']} ({s['to']})"
+                                                   for s in _res["sent"])
+                                       + f". Quotation + supplier details also sent to "
+                                         f"your email ({USER_EMAIL}) — see “Emails to you "
+                                         f"this session” below.")
+                        for b in _res["blocked"]:
+                            st.warning(f"Not sent — {b['name']}: {b['reason']}")
+                        for d in _res["duplicate"]:
+                            st.info(f"Already sent — {d['name']}: {d['reason']}")
+                else:
+                    _r = by_name.get(pending)
+                    if _r is None:
+                        st.error("Supplier no longer on the shortlist — nothing sent.")
+                    else:
+                        _res = _do_contact_one(_r, _previews[_r["name"]])
+                        if _res["status"] in ("sent", "mock_sent"):
+                            st.success(f"Approved & sent to {_r['name']} "
+                                       f"({_res['supplier']['to']}) — recorded in this "
+                                       f"session, no real email was sent in Demo Mode. "
+                                       f"Quotation + supplier details also sent to your "
+                                       f"email ({USER_EMAIL}) — see “Emails to you this "
+                                       f"session” below.")
+                        elif _res["status"] == "duplicate":
+                            st.info(f"Already sent in this session — {_res['reason']}")
+                        else:
+                            st.warning(f"Not sent — {_res.get('reason', 'blocked')}.")
+                st.session_state["contact_pending"] = None
+                st.rerun()
+        with _ap2:
+            if st.button("Cancel — send nothing", key="approve-cancel-btn"):
+                st.session_state["contact_pending"] = None
+                st.info("Cancelled — nothing was sent.")
+                st.rerun()
+
+    # --- Emails to you this session ------------------------------------
+    if st.session_state.get("user_emails"):
+        st.subheader("Emails to you this session")
+        st.caption(f"Quotation + contacted supplier details sent to your email "
+                   f"({USER_EMAIL}) after each approved contact. In Demo Mode "
+                   f"these are recorded here (downloadable as .eml) — no real "
+                   f"email was sent. With SMTP configured they are sent for real.")
+        for _i, _ue in enumerate(st.session_state["user_emails"]):
+            with st.expander(f"✉️ To you — {_ue['subject']}", expanded=False):
+                st.text_area("User email", value=_ue["body"], height=200,
+                             key=f"user-email-body-{_i}", disabled=True)
+                st.download_button("⬇ Download this email (.eml)",
+                                   data=build_eml(_ue["to"], _ue["subject"], _ue["body"])
+                                   if LIVE_MODULES_AVAILABLE else _ue["body"],
+                                   file_name=f"buildbuy-user-email-{_i + 1}.eml",
+                                   mime="message/rfc822",
+                                   key=f"user-email-dl-{_i}")
+    # Shortlist Excel download, here too (same file as the Suppliers tab).
+    if LIVE_MODULES_AVAILABLE:
+        _xlsx2 = shortlist_to_excel(top3, req,
+                                    st.session_state.get("delivery_location", ""))
+        st.download_button(
+            "⬇ Download shortlist as Excel (.xlsx)", data=_xlsx2,
+            file_name="buildbuy-shortlist.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="buyer-shortlist-xlsx")
 
     st.subheader("Inbox")
     col_list, col_thread, col_info = st.columns([1, 2, 1])
@@ -1177,11 +1410,12 @@ elif nav == "6 · Accuracy":
                "— eval runs, worst-answer review, raw-event checks — run "
                "internally, in the backend, tests and CI. There is no fix "
                "list and no evaluation action in this UI.")
-    # Live data when the backend is up; labelled synthetic demo otherwise.
-    # The backend payload also carries worst_answers / eval_runs /
-    # raw_events for internal use — this tab deliberately does not read
-    # or render them.
-    live_dash = fetch_live_accuracy() if LIVE else None
+    # LIVE-DATA-ONLY (2026-11-10): the dashboard is computed from
+    # this session's labelled demo metrics — the stored backend
+    # payload (GET /accuracy, metrics_daily / eval_runs) is NEVER
+    # read, because there is no storage. Evaluations run internally
+    # (backend, tests, CI); this tab shows the dashboard only.
+    live_dash = None
     if LIVE and live_dash is not None:
         dash = live_dash
         st.markdown('<span class="badge badge-live">● LIVE — measured from '

@@ -7,7 +7,10 @@ without touching the others. Modules talk to each other only through the
 interfaces below — never through private internals.
 
 - **Contracts:** `app/schemas.py` (Pydantic API/agent contracts),
-  `app/config.py` (env-only settings), `app/db/` (SQLAlchemy models).
+  `app/config.py` (env-only settings), `app/db/` (SQLAlchemy models —
+  **unused legacy, future storage only**; the live flow never imports
+  it), `app/live.py` (stdlib-only live contact + user-email flow, no
+  DB imports), `app/records/excel.py` (openpyxl shortlist export).
 - **Wiring:** `app/integrations.py` is the ONE module allowed to import
   every AI module; it exposes `MODULE_AVAILABILITY` and honest
   try/except fallbacks. The API layer (`app/api/`) imports it — AI
@@ -36,10 +39,14 @@ interfaces below — never through private internals.
 | 12 | LoRA | `app/lora/adapter.py` | Toy rank-2 LoRA intent adapter (numpy-only): plan_qa / takeoff / supplier_search / buyer. Real PEFT path documented in the file, not run | `.venv/bin/python -m pytest tests/test_lora.py -v` |
 | 13 | Observability / Accuracy | `app/observability.py` (+ `app/api/routes.py` `GET /accuracy`, `POST /accuracy/worst-answers/{id}/action`; `app/schemas.py` `AccuracyMetricOut` / `AccuracyDashboardOut`) | `METRIC_DEFS` (8 separate metrics, never blended) · `compute_daily_metrics` (nightly rollup of `metrics_daily` — now also retrieval top-1, guardrail block rate, ranking top-1, cache hit, cost per job from eval runs / orders / events; takeoff MAPE stays NULL until corrected-vs-estimate pairs are recorded) · `build_accuracy_dashboard(db, days=30)` (metrics + headline + trends + per-module + alerts; the payload also carries Worst Answers + Eval Run History + PII-free raw events for internal use only — the UI does not render them; every count windowed to the requested days) · `record_worst_answer_action` (internal-only: add to eval set, deduped by `qa_log_id`, audited; repeat → 409). Measured only — NULL when there is not enough data, never invented | `.venv/bin/python -m pytest tests/test_observability.py tests/test_backend.py -k accuracy -v` |
 | 14 | Records / summaries | `app/records/export.py` | Requirement → invoice audit trail as CSV / JSON / summary (PDF when reportlab is installed, else .txt). Invoices only from supplier-supplied data | `.venv/bin/python -m pytest tests/test_records.py -v` |
+| 14b | Live-data-only contact + Excel | `app/live.py` (stdlib only, no DB imports), `app/records/excel.py` | **Live flow (2026-11-10):** `contact_supplier` / `contact_suppliers_bulk` — approval-gated supplier contact, user summary email (quotation + contacted supplier details) to deepthiag26@gmail.com, idempotent in-session; `supplier_official_email` (None when not held — never invented); `shortlist_to_excel` — the ranked shortlist as a real `.xlsx` (22 columns). No storage anywhere in this module | `.venv/bin/python -m pytest tests/test_live.py -v` |
 | 15 | Frontend | `frontend/app.py` (7 screens), `frontend/helpers.py` (pure logic), `frontend/demo_data.py` (synthetic data), `frontend/accuracy.py` (pure Accuracy helpers), `frontend/theme.py` (pure theme: palette, CSS, status chips, journey stepper, hero) | Streamlit dashboard: Start (chat-first input) → Plan & Materials → Suppliers & Twin → Buyer Agent → My Orders → Accuracy → Settings. Typed requirements are parsed deterministically (`parse_requirement`: item, quantity, unit, location, deadline, budget; optional `llm_parser` hook with fallback) and applied to the takeoff (`apply_requirement_to_takeoff`). Buyer Agent shows a per-supplier email preview (contact details, channel/from/to/subject, full editable body, Save/Reset/Send, blocked when the email is not held; `build_quote_email` is byte-for-byte the backend `draft_quote`). Theme: warm brown (`.streamlit/config.toml` + `theme.py` CSS; primary `#7C4A21`, background `#FBF6EF`), documented design system (one typography scale, one card, one primary per section, `$`-formatted currency columns, WCAG AA contrast), compact gradient hero, 9-step journey stepper rendered after the nav radio so its current step matches the selected tab, colour-coded status chips (text labels always kept). Accuracy tab (tab 6) is the Observability Dashboard only: 8-metric table (formula/source/n/target/status), 4 headline cards, 2 Altair trend charts with alert thresholds as dashed rules (temporal date axis, chronological, missing day = gap, never 0%; line_chart fallback), per-module table (metric/value/n, no worst column). Evaluations are internal only — no Worst Answers, Eval Run History or drill-down in the UI, no evaluation actions; live mode fetches `GET /accuracy` (LIVE badge), demo mode shows labelled synthetic data, empty state says "no data yet". Pure helpers (ranking, transport, twin, parsing, accuracy, theme) are tested without Streamlit; all 7 tabs are render-checked with Streamlit AppTest when Streamlit is installed | `.venv/bin/python -m pytest tests/test_frontend.py tests/test_theme.py -v` (helpers + AppTest); `streamlit run frontend/app.py` for the UI |
 
-Shared (not business modules): `app/main.py` (FastAPI app), `app/api/`
-(HTTP routes only), `app/config.py`, `app/schemas.py`, `app/db/`,
+Shared (not business modules): `app/main.py` (FastAPI app —
+**storage OFF by default; `/health` reports `"storage": "none —
+live, session-only"`**), `app/api/` (HTTP routes only — the stored
+endpoints are legacy; the live endpoint is `POST /live/contact`),
+`app/config.py`, `app/schemas.py`, `app/db/` (**unused legacy**),
 `app/integrations.py` (wiring), `app/logging_setup.py`.
 
 ## How to rebuild one module alone

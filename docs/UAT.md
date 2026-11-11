@@ -52,12 +52,13 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 | 3.9 | Cheap but late / low quality | That supplier's total risk is higher than a pricier, on-time, high-quality supplier's under the same what-if |
 | 3.10 | Recommendation + runner-up | Twin names a recommendation AND a runner-up, with reasons and method shown |
 | 3.11 | Supplier card contact + how we contact them | Phone / address show "not held" when missing (never invented); a line says how they will be contacted (Email, from, to) and points to the full preview on the Buyer Agent tab |
+| 3.12 | Download shortlist as Excel (live-data-only, 2026-11-10) | "⬇ Download shortlist as Excel (.xlsx)" downloads a real `.xlsx`: title line names the requirement, header row has 22 columns (Rank … Contact source), one row per shortlisted supplier, landed cost and quality as numbers; an empty shortlist exports headers only — no invented rows |
 
 ## 4. Buyer Agent — draft, toggles, approval
 
 | # | Check | Pass means |
 |---|---|---|
-| 4.1 | Draft email shown before sending | Draft visible and editable; nothing is sent before you tap Send |
+| 4.1 | Draft email shown before sending | Draft visible and editable; clicking Contact opens an approval panel — **nothing is sent before you tap "✅ Approve & send"** |
 | 4.2 | Contact-sharing toggles | Default OFF per supplier; with OFF, your contact never appears in the draft/email |
 | 4.3 | Toggle ON for one supplier only | Contact appears for that supplier only, not for the others |
 | 4.4 | Negotiation limits | Max price + latest date set by you; an offer above the cap cannot be approved (Approve disabled) |
@@ -69,10 +70,14 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 | 4.10 | "We never handle payment" | Stated on the approval screen; no payment field, no card input anywhere |
 | 4.11 | No order without a tap | There is no path in the UI that creates an order without Approve |
 | 4.12 | Per-supplier email preview | Each top-3 supplier has a card showing contact details (email / phone / address, "not held" when missing), channel (Email), from, to, subject, and the FULL email body — before anything is sent |
-| 4.13 | Edit the email, Save, Reset | Editing subject/body and tapping Save sends the edited text; Reset to draft rebuilds the email from the requirement |
+| 4.13 | Edit the email, Save, Reset | Editing subject/body and tapping Save keeps the edited text in the preview; Reset to draft rebuilds the email from the requirement |
 | 4.14 | Sharing toggle changes the preview | Toggling "Share my contact" ON for one supplier puts your name/email/phone in that supplier's preview only; OFF shows "a customer" |
-| 4.15 | Supplier with no email held | The card says "Email not held" and its Send button is disabled; "Send to top 3" lists it as blocked — no address is ever guessed |
-| 4.16 | Send uses the edited text, sharing OFF strips contact | An edited body is what gets sent; with sharing OFF, any name/email/phone typed into the edited draft is removed before sending |
+| 4.15 | Supplier with no email held | The card says "Email not held" and its Contact button is disabled; the bulk-contact button lists it as blocked — no address is ever guessed |
+| 4.16 | Approve sends the edited text, sharing OFF strips contact | After "✅ Approve & send", the sent email is the edited text; with sharing OFF, any name/email/phone typed into the edited draft is removed before sending |
+| 4.19 | Approval panel shows supplier + user email before sending (live-data-only, 2026-11-10) | Clicking Contact shows the supplier's details, the exact email to be sent, AND a preview of the email you will receive — before anything is sent |
+| 4.20 | Cancel sends nothing (live-data-only, 2026-11-10) | Clicking Contact, then "Cancel — send nothing": no supplier email and no user email is recorded or sent |
+| 4.21 | Approve sends supplier email AND user email (live-data-only, 2026-11-10) | After "✅ Approve & send", the supplier's official email receives the quote request and deepthiag26@gmail.com receives an email with the quotation + the contacted supplier's details (name, email, phone/address where held, landed cost, quality, lead time); in Demo Mode both appear under "Emails to you this session" with `.eml` downloads and "no real email sent — demo" stated |
+| 4.22 | Approving the same email twice sends once (live-data-only, 2026-11-10) | Re-approving the exact same supplier email is reported as a duplicate — the supplier and the user each receive it once, not twice |
 | 4.17 | Email-card count is honest for a small quantity | For `concrete, 10 m3` only ONE email card renders (Sierra) — and the tab says so: "Showing 1 email card" + the other 5 suppliers listed as MOQ-excluded with their MOQs; the bulk-send button reads "Send quote request (1 sendable supplier)", not "top 3" |
 | 4.18 | Reset to draft really restores the text | Edit the subject/body, tap "Reset to draft" — both textboxes come back as the regenerated draft (subject "Quote request — …"); the "How we will contact them" line always shows the subject the textbox currently holds, including a saved edit |
 
@@ -86,6 +91,7 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 | 5.4 | Chase delivery | Chase action drafts/sends a follow-up; recorded on the timeline |
 | 5.5 | Mark delivered | Only a human tap marks delivery; the app never claims to prove arrival |
 | 5.6 | Records export | Order exports as JSON with the full audit trail |
+| 5.7 | Live-data-only: nothing is stored (2026-11-10) | Refresh / close the tab and reopen it: the requirement, shortlist and emails are gone (session-only). The Excel shortlist and the `.eml` user emails downloaded earlier still open — those are the only records kept |
 
 ## 6. Accuracy — observability
 
@@ -134,4 +140,10 @@ a real result.
 
 | Date | Device | Tester | Items passed / total | Failures (issue #) |
 |---|---|---|---|---|
-| _yyyy-mm-dd_ | _phone model / desktop_ | | _/ 79_ | |
+| _yyyy-mm-dd_ | _phone model / desktop_ | | _/ 84_ | |
+
+**Live-data-only (2026-11-10):** the app has no storage. UAT items
+4.19–4.22 and 5.7 cover the approval-gated contact flow, the user
+email and the session-only behaviour; item 3.12 covers the Excel
+shortlist export. `GET /health` must report
+`"storage": "none — live, session-only"`.

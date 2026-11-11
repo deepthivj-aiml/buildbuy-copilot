@@ -1,5 +1,13 @@
 """BuildBuy Copilot — FastAPI routes (plan §3.6 + new endpoints).
 
+LIVE-DATA-ONLY (2026-11-10): the endpoints in this module are the
+LEGACY stored-data API — they read/write the database, and the live
+user flow (``app/live.py`` + the Streamlit session) does NOT use
+them. They are kept for tests and internal evals, and for a future
+deployment that has storage. The live contact flow is
+``POST /live/contact`` below, which uses ``app/live.py`` and the
+email service with NO database.
+
 New endpoints (2026-11-10 brief):
 - POST /requirements/{id}/buyer/message — chat message to a supplier via email
 - GET  /requirements/{id}/buyer/inbox — full threads (also §3.6)
@@ -1340,4 +1348,54 @@ def worst_answer_action(qa_id: str, payload: WorstAnswerActionRequest,
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if result.get("error"):
         return JSONResponse(status_code=409, content=result)
+    return result
+
+
+# ------------------------------------------------------------- live contact (no storage)
+@router.post("/live/contact")
+def live_contact(payload: dict):
+    """Live-data-only contact flow — NO database.
+
+    Body: {"requirement": {...}, "materials": [...], "supplier": {...},
+    "subject": "...", "body": "...", "approved": true,
+    "share_contact": false, "buyer": {...}, "user_email": "..."}.
+    ``approved`` must be true — the caller shows the approval panel
+    first; without it this returns 400 and sends nothing. The
+    supplier email goes to the supplier's OFFICIAL email on file
+    (blocked with 422 when none is held — never guessed), and the
+    quotation + contacted supplier details go to the user's email.
+    Email is MockSMTP-recorded unless SMTP is configured, in which
+    case it is really sent (see app/email/service.py).
+    """
+    from app.live import contact_supplier
+
+    if not payload.get("approved"):
+        raise HTTPException(
+            status_code=400,
+            detail="Approval required: approve the supplier email before sending.")
+    service = EmailService(db=None)
+
+    def _send(*, to, subject, body):
+        return service.send(to=to, subject=subject, body=body,
+                            deal_id="live-session",
+                            supplier_id=str(payload.get("supplier", {}).get("name", "")),
+                            round_no=1, kind="quote_request")
+
+    try:
+        result = contact_supplier(
+            requirement=payload.get("requirement"),
+            materials=payload.get("materials"),
+            supplier=payload.get("supplier") or {},
+            subject=payload.get("subject") or "",
+            body=payload.get("body") or "",
+            approved=True,
+            share_contact=bool(payload.get("share_contact", False)),
+            buyer=payload.get("buyer") or {},
+            send_email=_send,
+            sent_keys=set(),
+            user_email=payload.get("user_email") or "deepthiag26@gmail.com")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result["status"] == "blocked":
+        return JSONResponse(status_code=422, content=result)
     return result

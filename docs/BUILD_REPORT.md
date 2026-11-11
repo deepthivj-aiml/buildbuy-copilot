@@ -743,3 +743,119 @@ default, nothing ordered without approval.
   `test_professional_design_system_is_consistent`. UAT §8 gains 8.9–
   8.11 (stepper, chart dates/gap, email count); §6.3 notes the
   temporal axis.
+
+## 22. Live-data-only refactor + Excel export + approval-gated contact (user update 2026-11-10 22:22)
+
+**Request:** "Make the app to work with live data only nd email quatation nd contacted supplier details to user email. dont make architecture to store and work on stored data now as we dont have a storage.. give option for them to download shortlisted supplier details in excel also and after clicking contact give supplier details to user email and msg supplier to their official email regarding request, before sending email to supplier ask aproval nd give esit option too"
+
+### What changed
+
+- **Live data only, no stored-data architecture.** `app/config.py`
+  gains `storage_enabled: bool = False` (env `STORAGE_ENABLED`).
+  `app/main.py` calls `init_db()` only when storage is enabled, and
+  `/health` reports `"storage": "none — live, session-only"` by
+  default. `app/db/session.py` and `app/db/__init__.py` are marked
+  LEGACY / FUTURE STORAGE ONLY in their docstrings — the live flow
+  never imports or calls them. `app/api/routes.py` (the stored-data
+  API) is marked legacy in its module docstring; the live flow does
+  not use it. The Accuracy tab no longer calls
+  `fetch_live_accuracy()` — stored metrics are never read. This is
+  the smallest honest version from the task brief: the DB code
+  remains on disk (backend tests still exercise it explicitly with a
+  temp DB), but the live path uses no DB. Nothing is deleted blindly.
+- **New module `app/live.py`** (stdlib only, no DB imports):
+  `USER_EMAIL = "deepthiag26@gmail.com"`; `supplier_official_email()`
+  (regex extract from the supplier record, `None` when not held);
+  `strip_contact_details()` (mirror of the email-service rule);
+  `build_user_summary_email()` (quotation + contacted supplier
+  details); `build_eml()`; `contact_supplier()` and
+  `contact_suppliers_bulk()` — both raise `ValueError("Approval
+  required")` unless `approved=True`, return `{"status": "blocked"}`
+  with nothing sent when no official email is held, and are
+  idempotent in-session via a caller-supplied `sent_keys` set
+  (repeat approval of the exact same email → `"duplicate"`).
+- **New module `app/records/excel.py`:** `shortlist_to_excel(rows,
+  requirement, delivery_location)` — a real `.xlsx` (openpyxl,
+  `openpyxl==3.1.5` added to `requirements.txt`) with 22 columns:
+  Rank, Supplier, Location, Distance (mi), Unit price ($), Quantity,
+  Goods ($), Transport ($), Taxes/fees ($), Landed cost ($), Landed
+  cost label, Quality /100, Quality evidence, Lead time (days), MOQ,
+  Best value, Cheapest, Highest quality, Official email, Phone,
+  Address, Contact source. Bold header, freeze panes, column widths,
+  numbers stored as numbers; an empty shortlist exports headers
+  only — no invented rows.
+- **New backend endpoint `POST /live/contact`** (`app/api/routes.py`,
+  appended): no DB use, `EmailService(db=None)`; `approved` false →
+  400; no official email → 422 `blocked`; approved → supplier email
+  + user summary email, both returned in the response.
+- **Frontend (`frontend/app.py`):** imports `app.live` and
+  `app.records.excel` guarded by try/except (`LIVE_MODULES_AVAILABLE`
+  flag); session state gains `contact_pending`, `user_emails`,
+  `sent_emails`, `sent_keys`. A "Live-data-only" caption sits under
+  the DEMO badge (no storage, session cleared on close, suppliers are
+  synthetic demo records). Suppliers & Twin and Buyer Agent tabs each
+  have a "⬇ Download shortlist as Excel (.xlsx)" button. Per-supplier
+  "📧 Contact … — review & approve" and the bulk "Contact top 3
+  suppliers — review & approve" button now open an **approval panel**
+  instead of sending: supplier details, how they will be contacted,
+  the exact email (disabled preview), a preview of the email to the
+  user, "✅ Approve & send" / "Cancel — send nothing". On approval
+  the session sender records both emails (`quote_sent`,
+  `user_emails`); "Emails to you this session" shows them with `.eml`
+  downloads. The user email contains the quotation (landed cost,
+  quality, lead time) and the contacted supplier's details (name,
+  official email, phone/address where held — "not held" otherwise)
+  and states "Nothing has been ordered".
+- **Honesty note:** demo suppliers' emails are synthetic `.example`
+  addresses (e.g. `sales@baysteel.example`); Pacific Fasteners and
+  Delta Materials have no email held ("not public — request via
+  email"). In session/Demo Mode emails are recorded + downloadable as
+  `.eml`, NOT actually sent; a real send needs a backend with
+  `EMAIL_PROVIDER=smtp`. The frontend contact flow uses the session
+  sender only.
+
+### Tests
+
+- **New file `tests/test_live.py` (15 tests):** approval required
+  (raises, nothing sent); no official email blocks (nothing sent,
+  nothing guessed); approve sends supplier + user email with
+  quotation; sharing OFF strips buyer details from the supplier
+  email; idempotent duplicate; bulk = one user email + blocked
+  listed; user summary builder contents; Excel valid `.xlsx` with
+  exact columns/rows/values; Excel empty = headers only; Excel never
+  invents contact; `/health` storage field; `POST /live/contact`
+  400/200/422; Suppliers tab Excel button present (AppTest; note:
+  AppTest does not expose download bytes — its `value` is a bool —
+  so the bytes are validated through the same builder the button
+  calls, on the same ranked rows); Contact opens the approval panel
+  and Cancel sends nothing; bulk approval sends and records one user
+  email.
+- **Updated `tests/test_frontend.py`:** the send test now walks the
+  two-step flow (Contact → panel, nothing sent → Approve → sent with
+  edited text, contact stripped, user email recorded). The blocked-send
+  test is unchanged (button still disabled when no email is held).
+- **Updated `tests/test_modularity.py`:** the allowed-import map adds
+  `app.live` for `api` and a `"live": set()` entry (stdlib only).
+- **Full suite: 101 passed, 0 failed, 0 skipped** (`pytest tests/
+  -q`), `tests/self_test.py` exit 0. (Was 86 passed at d55df85; +15
+  new live tests.)
+
+### Docs updated
+
+README.md (live-data-only banner, Excel download, contact flow step
+by step, diagram + testing + limits), docs/ARCHITECTURE.md (§1
+banner, §2 diagram, §4 data flow "Record kept (live-only)", §6
+`POST /live/contact`, §7 marked future-storage-only, §9 tabs,
+§10 observability sources note), docs/MODULES.md (module 14b +
+contracts/shared notes), docs/DEPLOY.md (database row = none, smoke
+test steps 6–7), docs/UAT.md (3.12 Excel, 4.1/4.13/4.15/4.16
+reworded to the approval flow, 4.19–4.22 approval/user-email/
+duplicate, 5.7 session-only; total 84 items).
+
+### Status
+
+Local commit only — **not pushed, not deployed, no real emails sent.**
+Parent to push (new GitHub PAT, push-8) and verify the Streamlit
+redeploy in the browser: Excel download present, Contact → approval
+panel → Approve sends + user email recorded, concrete 10 m3 still
+works, Find button still works.

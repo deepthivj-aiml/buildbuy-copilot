@@ -18,6 +18,23 @@ order confirmation → delivery chase → invoice tracking.
 It will NOT pay, NOT order without approval, and NOT invent a supplier,
 quote, contact, rating, or invoice.
 
+> **Live data only — no storage (2026-11-10).** There is no working
+> database. The user journey — requirement, takeoff, shortlist, twin
+> simulation, buyer emails — is computed live in the session from the
+> user's input and is **not persisted**. The tables in §7 and the
+> `Stored` column in §4 describe the *planned* data model for a future
+> storage-backed version, not what the app does today: `app/db/`
+> (Postgres / SQLite) is unused legacy code, `app/main.py` only
+> initialises a database when `STORAGE_ENABLED=true` (default off),
+> and `/health` reports `"storage": "none — live, session-only"`.
+> What the user keeps: the **Excel shortlist** export and the
+> **emails to deepthiag26@gmail.com** (quotation + contacted supplier
+> details) — §4 steps 4 and 6 below. The live contact flow is
+> `app/live.py` (stdlib only, no DB imports); the Excel export is
+> `app/records/excel.py`. The stored-data API in `app/api/routes.py`
+> is legacy and is not used by the live flow; the live endpoint is
+> `POST /live/contact` (see §6).
+
 ## 2. System diagram
 
 ```mermaid
@@ -35,7 +52,7 @@ flowchart TD
     API --> CACHE[Semantic cache — Redis<br/>repeat plan questions + repeat supplier Qs<br/>served with no LLM call; $ savings shown]
     API --> EVAL[Eval harness — generated eval sets<br/>groundedness, guardrail block rate,<br/>cache hit rate, retrieval accuracy]
     API --> LORA[LoRA adapter — PyTorch + PEFT<br/>per-user intent classification<br/>toy scale first, labelled honestly]
-    API --> DB[(Data: PostgreSQL Neon/Supabase free<br/>local: DuckDB / SQLite<br/>requirements, plans, materials,<br/>suppliers, quotes, orders, audit log)]
+    API --> LIVE[Live session only — no storage<br/>requirement, takeoff, shortlist, twin,<br/>emails live in the session; Excel export<br/>+ user email are the only records kept]
     API --> LLM[LLM provider — pluggable<br/>OpenAI / Claude API, BYO key<br/>local fallback: TF-IDF + rules]
     FE --> U
     MAIL --> S[Suppliers — email<br/>no login required to reply]
@@ -98,20 +115,26 @@ deterministic idempotency keys `email:{deal}:{supplier}:{round}`.
 
 ## 4. Data flow end-to-end (one purchase)
 
-| Step | Input | Service | Output | Stored |
+**Live-only (2026-11-10):** the "Record kept" column below is what
+the *user* keeps — the Excel shortlist (step 4) and the emails to
+deepthiag26@gmail.com (step 6) — or what the *session* holds until
+the tab closes. Nothing is written to a database; the table names
+refer to the future-storage model in §7.
+
+| Step | Input | Service | Output | Record kept (live-only) |
 |---|---|---|---|---|
-| 1. Start | **The chat is the input:** plan image/PDF, or typed/photographed part/requirement in chat, then quantity + optional location + deadline + budget as follow-up prompts | Frontend chat → API validation (file type, size ≤10 MB, PII scan) | Requirement object (items, qty, location, deadline, budget) | `requirements` |
-| 2. Plan Q&A | Question + plan + specs | Scale-confirm gate → VLM (regions/labels) + Hybrid RAG (passages) + Guardrails | Answer + image-region citation + spec-clause citation, or "not found" | Q&A log + citations |
-| 3. Takeoff | Plan regions + scale hint | Takeoff engine (area/count/length × rates) + confidence scoring | Materials list with quantities, method per line, "estimate" label, flagged low-confidence lines | `materials` |
-| 4. Supplier search | Materials/requirement + location + qty | Supplier search (public + user-added) + Hybrid RAG over supplier docs | Ranked shortlist (3–5) with distance, lead time, MOQ, landed cost, fit, quality + evidence | `suppliers` + `shortlist` |
-| 5. Twin simulation | Shortlist + qty + deadline | Digital Twin (landed cost, date, cost risk + quality risk, what-if) | Simulation per supplier + ranked recommendation + runner-up | `simulations` |
-| 6. Buyer contact | Top 3 + buyer limits + contact-sharing toggles | Buyer Agent (LangGraph) → draft shown → Email service | Quote-request emails sent as "BuildBuy Copilot, acting as the buying agent for [customer]" — contact only when that supplier's toggle is ON | `outreach` + email log |
-| 6b. Supplier question | Supplier reply asking something outside the requirement | Escalation (`app/agents/escalation.py`) | Answerable from the requirement → answered; otherwise NEEDS_CUSTOMER, customer emailed, supplier reply only after the customer's answer, in their words | `messages` + `outreach` (NEEDS_CUSTOMER) + audit log |
-| 7. Negotiation | Supplier replies (parsed) + limits | Negotiator agent (one round, within cap/date) | Best confirmed offer + runner-up | `quotes` |
-| 8. Approval | Offer + simulation | Human-approval gate (UI) | Approve / Reject | `orders` (PENDING → APPROVED/REJECTED) |
-| 9. Confirm + chase | Approved order | Buyer Agent → confirmation email; Chaser agent on promised date | Order confirmation; delivery-chase email if overdue | `orders` + audit log |
-| 10. Invoice | Supplier sends an invoice | InvoiceTracker records supplier-supplied number + amount | Order status INVOICE_RECEIVED | `invoices` |
-| 11. Audit | Every step | Audit log (JSONL + DB) | Full timeline: who/what/when, every quote and message | `audit_log` |
+| 1. Start | **The chat is the input:** plan image/PDF, or typed/photographed part/requirement in chat, then quantity + optional location + deadline + budget as follow-up prompts | Frontend chat → API validation (file type, size ≤10 MB, PII scan) | Requirement object (items, qty, location, deadline, budget) | session only — not stored |
+| 2. Plan Q&A | Question + plan + specs | Scale-confirm gate → VLM (regions/labels) + Hybrid RAG (passages) + Guardrails | Answer + image-region citation + spec-clause citation, or "not found" | session only — not stored |
+| 3. Takeoff | Plan regions + scale hint | Takeoff engine (area/count/length × rates) + confidence scoring | Materials list with quantities, method per line, "estimate" label, flagged low-confidence lines | session only — not stored |
+| 4. Supplier search | Materials/requirement + location + qty | Supplier search (public + user-added) + Hybrid RAG over supplier docs | Ranked shortlist (3–5) with distance, lead time, MOQ, landed cost, fit, quality + evidence | **Excel download** (.xlsx, 22 columns) — the user's copy |
+| 5. Twin simulation | Shortlist + qty + deadline | Digital Twin (landed cost, date, cost risk + quality risk, what-if) | Simulation per supplier + ranked recommendation + runner-up | session only — not stored |
+| 6. Buyer contact | Top 3 + buyer limits + contact-sharing toggles | Buyer Agent (LangGraph) → draft shown → **approval panel** → Email service (`app/live.py`) | Quote-request emails sent as "BuildBuy Copilot, acting as the buying agent for [customer]" — contact only when that supplier's toggle is ON | **Supplier email + user email** to deepthiag26@gmail.com (quotation + contacted supplier details); `.eml` downloads in Demo Mode |
+| 6b. Supplier question | Supplier reply asking something outside the requirement | Escalation (`app/agents/escalation.py`) | Answerable from the requirement → answered; otherwise NEEDS_CUSTOMER, customer emailed, supplier reply only after the customer's answer, in their words | user email with the exact question |
+| 7. Negotiation | Supplier replies (parsed) + limits | Negotiator agent (one round, within cap/date) | Best confirmed offer + runner-up | session only — not stored |
+| 8. Approval | Offer + simulation | Human-approval gate (UI) | Approve / Reject | session only — not stored |
+| 9. Confirm + chase | Approved order | Buyer Agent → confirmation email; Chaser agent on promised date | Order confirmation; delivery-chase email if overdue | user email |
+| 10. Invoice | Supplier sends an invoice | InvoiceTracker records supplier-supplied number + amount | Order status INVOICE_RECEIVED | user email |
+| 11. Audit | Every step | Audit log (JSONL + DB) | Full timeline: who/what/when, every quote and message | **not kept without storage** — download the Excel / `.eml` records instead |
 
 ## 5. Cost AND quality ranking (2026-11-10 update)
 
@@ -242,8 +265,18 @@ there is no second formula left in the repo.
 
 ## 6. API endpoints
 
+**Live-only (2026-11-10):** the endpoints in this table are the
+stored-data API (`app/api/routes.py`) — **legacy, not used by the
+live flow**. The live flow uses one endpoint, `POST /live/contact`
+(last row), which takes the requirement, materials, supplier and the
+edited subject/body in the request body, uses no database, and
+requires `approved: true`. Everything the user does in the app runs
+in the session through the Streamlit frontend; the backend stored
+endpoints exist for a future storage-backed version only.
+
 | Method + path | Purpose |
 |---|---|
+| `POST /live/contact` | **Live endpoint (2026-11-10).** Contact one supplier: `approved` must be `true` or 400; no official email held → 422 `blocked`, nothing sent; approved → supplier email + user summary email (quotation + contacted supplier details) to deepthiag26@gmail.com. Idempotent per email (repeat → `duplicate`). No DB use. |
 | `POST /requirements` | Create a requirement (typed/photo/plan) — returns parsed fields for user edit |
 | `POST /requirements/{id}/plans` | Upload plan image/PDF + specs (≤10 MB, ≤25 sheets) |
 | `POST /requirements/{id}/plans/{plan_id}/scale-confirm` | Confirm / correct scale before any measurement |
@@ -276,7 +309,13 @@ there is no second formula left in the repo.
 | `POST /settings/contact-sharing/{supplier_id}` | Toggle contact sharing for one supplier (default OFF) |
 | `GET /health` | Liveness (deploy smoke test) |
 
-## 7. Data model
+## 7. Data model — future storage only (2026-11-10)
+
+The tables below are the **planned** data model for a future
+storage-backed version. **Today the app has no storage**: no table is
+created, read or written by the live flow (`STORAGE_ENABLED` defaults
+to `false`; `app/db/` is unused legacy code). Do not read this section
+as a description of what the running app stores — it stores nothing.
 
 ```
 users(id, name, email, phone, created_at, free_tier_quota, byo_key_set BOOL)
@@ -361,24 +400,41 @@ eval_runs(id, eval_set, groundedness DECIMAL, retrieval_top1 DECIMAL,
    recommendation + runner-up, best-value vs cheapest vs highest-quality
    side by side, MOQ-excluded suppliers listed with reasons. Supplier
    cards show contact details (never invented — "not held" when missing)
-   and how they will be contacted (Email, from, to).
+   and how they will be contacted (Email, from, to). **Excel download
+   (2026-11-10):** "⬇ Download shortlist as Excel (.xlsx)" exports the
+   ranked shortlist as a real `.xlsx` (22 columns: rank, supplier,
+   location, distance, unit price, landed cost + breakdown, quality
+   /100 + evidence, lead time, MOQ, best-value / cheapest /
+   highest-quality flags, official email, phone, address, contact
+   source) via `app/records/excel.py` (`shortlist_to_excel`, openpyxl).
 4. **Buyer Agent** — 3-column inbox (thread list / message thread / supplier
    info), per-supplier email preview shown in full before sending
    (contact details, channel, from, to, subject, whole body — editable
-   subject + body, Save / Reset to draft, Send only after confirmation;
-   sending blocked, never guessed, when the supplier's email is not
-   held), per-supplier contact-sharing toggle (default OFF, labelled
+   subject + body, Save / Reset to draft, **Contact only after an
+   explicit approval step**; sending blocked, never guessed, when the
+   supplier's email is not held), per-supplier contact-sharing toggle (default OFF, labelled
    "Share my contact with this supplier" with a plain-words explanation
    of what is shared when ON and what the supplier sees when OFF) that
    the preview reflects (OFF = "a customer", ON = name/email/phone;
    at send time with OFF, any contact typed into an edited draft is
    stripped by `strip_contact_details`). The preview body is
    byte-for-byte the backend `EmailService.draft_quote` output
-   (tested). Negotiation limits, Approve/Reject pane showing
+   (tested). **Contact flow (2026-11-10, `app/live.py`):** clicking
+   Contact opens an approval panel — supplier details, exact email,
+   and a preview of the email to the user — and sends **nothing**
+   until "✅ Approve & send" is clicked (or "Cancel — send nothing").
+   On approval the message goes to the supplier's official email and
+   the quotation + contacted supplier details go to the user email
+   (deepthiag26@gmail.com); the same email is never sent twice in a
+   session (idempotent). In Demo Mode both emails are recorded in the
+   session and downloadable as `.eml`, with "no real email sent —
+   demo" stated; a real send needs a backend with
+   `EMAIL_PROVIDER=smtp`. Negotiation limits, Approve/Reject pane showing
    best-value vs cheapest vs highest-quality, "we never handle payment".
    A "needs you" panel lists supplier questions the agent could not
    answer — the customer answers there and the agent sends their words
-   to the supplier.
+   to the supplier. The Buyer Agent tab also offers the Excel shortlist
+   download.
 5. **My Orders** — timeline requirement → plan → materials → suppliers →
    quotes → negotiation → approval → order → delivery → invoice, with
    INVOICE_RECEIVED state; invoice details recorded only from the supplier;
@@ -426,6 +482,16 @@ synthetic in-memory data — no paid key, no real email. With the backend up
 at `API_URL` (default `http://localhost:8000`) it switches to LIVE MODE.
 
 ## 10. Observability — Accuracy dashboard
+
+**Live-only note (2026-11-10):** the dashboard's *sources* below
+(`metrics_daily`, `qa_log`, `orders`, `outbox`, …) are stored tables
+from the future-storage model — today they do not exist, so the live
+Accuracy tab does **not** read them. The tab shows the 8 metrics from
+the in-session demo data (`frontend/demo_data.py`, labelled demo) or
+"no data yet" when empty; evaluations run internally in the backend /
+tests / CI. The metric *definitions* (formulas, targets) in §10.1 are
+unchanged and are the single source of truth for what will be
+measured once storage exists.
 
 Defined in the plan (§9): per-request structured JSON logs (`request_id`,
 step, model, tokens, latency, citations, grounded, cache_hit,

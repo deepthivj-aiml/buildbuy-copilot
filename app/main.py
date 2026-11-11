@@ -72,12 +72,17 @@ async def request_id_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 def on_startup() -> None:
-    init_db()
+    # LIVE-DATA-ONLY (2026-11-10): do NOT create a database on
+    # startup unless storage was explicitly enabled. The live flow
+    # (app/live.py + the Streamlit session) uses no storage at all.
+    if settings.storage_enabled:
+        init_db()
     logger.info(
         "startup",
         extra={"fields": {
             "email_backend": "mock" if settings.is_mock_email else "smtp",
-            "database": "postgres" if settings.database_url.startswith("postgres") else "sqlite",
+            "storage": ("enabled" if settings.storage_enabled
+                        else "none — live, session-only"),
             "graph": "langgraph" if LANGGRAPH_AVAILABLE else "local-runner",
         }},
     )
@@ -89,7 +94,10 @@ def health() -> dict:
         "status": "ok",
         "service": "buildbuy-copilot",
         "email_backend": "mock" if settings.is_mock_email else "smtp",
-        "database": "postgres" if settings.database_url.startswith("postgres") else "sqlite",
+        "storage": ("postgres" if settings.storage_enabled
+                    and settings.database_url.startswith("postgres")
+                    else ("sqlite (legacy, enabled)" if settings.storage_enabled
+                          else "none — live, session-only")),
         "graph_available": LANGGRAPH_AVAILABLE,
     }
 

@@ -68,9 +68,10 @@ ALLOWED_IMPORTS = {
                      "app.ranking", "app.config"},
     "api": {"app.integrations", "app.agents", "app.email", "app.records",
             "app.db", "app.config", "app.schemas", "app.observability",
-            "app.ranking"},
+            "app.ranking", "app.live"},  # live: session-only contact flow
     # Root-level single-file modules (app/*.py, not packages).
     "ranking": {"app.suppliers"},
+    "live": set(),  # stdlib only — the live flow imports nothing from app.*
     "main": {"app.agents", "app.api", "app.db"},
 }
 ALWAYS_ALLOWED = {"app.config", "app.schemas", "app.db", "app.logging_setup"}

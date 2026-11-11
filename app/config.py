@@ -22,6 +22,15 @@ class Settings(BaseSettings):
 
     # Database: SQLite file locally; Postgres via DATABASE_URL in deploy.
     # Default is a SQLite file inside the project data dir.
+    # LIVE-DATA-ONLY (2026-11-10): storage is OFF by default. The
+    # live flow (app/live.py + the Streamlit session) reads and writes
+    # NO database at all — requirement, takeoff, shortlist, emails and
+    # orders live only in the session. ``storage_enabled`` exists only
+    # for the legacy stored-data API (app/api/routes.py) and the
+    # internal eval/observability rollups, which tests call explicitly
+    # via init_db(). Set STORAGE_ENABLED=true only when you have a
+    # database to store in — the deployed app does not.
+    storage_enabled: bool = False
     database_url: str = "sqlite:///./data/buildbuy.db"
 
     # Email: MockSMTP is the default — nothing real is ever sent unless

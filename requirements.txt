@@ -30,6 +30,9 @@ pytest-asyncio==0.24.0
 # The backend stream owns the lines above; do not remove them.
 streamlit==1.67.0
 pandas==2.2.3
+# openpyxl — shortlist Excel export (app/records/excel.py). The
+# Streamlit app offers "Download shortlist as Excel (.xlsx)".
+openpyxl==3.1.5
 # Postgres driver (psycopg v3, binary wheel) — required by the api service
 # in docker-compose.yml (DATABASE_URL=postgresql+psycopg://...). Added by
 # the frontend/docker stream; backend stream to confirm the pin.

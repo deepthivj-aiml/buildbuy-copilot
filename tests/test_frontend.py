@@ -537,8 +537,9 @@ def test_buyer_agent_email_preview_edit_and_send():
     on_body = at.text_area(key="quote-body-Bay Steel Supply-shared-v0").value
     assert "Deepthi Jainlal" in on_body
     assert "deepthiag26@gmail.com" in on_body
-    # Sharing back OFF, edit the body, send: the sent text is the
-    # edited text, with contact stripped because sharing is OFF.
+    # Sharing back OFF, edit the body, click Contact: NOTHING is sent
+    # yet — the approval panel opens instead (live-data-only flow,
+    # 2026-11-10). quote_sent must still be empty.
     at.checkbox(key="send-share-Bay Steel Supply").set_value(False).run()
     at.text_area(key="quote-body-Bay Steel Supply-private-v0").set_value(
         "EDITED BODY — please quote 50 x steel brackets. "
@@ -546,10 +547,24 @@ def test_buyer_agent_email_preview_edit_and_send():
     assert not at.exception, at.exception
     at.button(key="quote-send-Bay Steel Supply").click().run()
     assert not at.exception, at.exception
+    assert at.session_state["quote_sent"] == {}
+    assert "Approve before sending" in _all_text(at)
+    assert "Email to you" in _all_text(at)  # user-email preview shown
+    # Approve: now it sends (recorded in-session), the sent text is the
+    # edited text, with contact stripped because sharing is OFF — and
+    # the user email carries the quotation + supplier details.
+    at.button(key="approve-send-btn").click().run()
+    assert not at.exception, at.exception
     sent = at.session_state["quote_sent"]["Bay Steel Supply"]
     assert sent["to"] == "sales@baysteel.example"
     assert "EDITED BODY" in sent["body"]
     assert "Deepthi" not in sent["body"] and "deepthiag26" not in sent["body"]
+    assert len(at.session_state["user_emails"]) == 1
+    user_email = at.session_state["user_emails"][0]
+    assert user_email["to"] == "deepthiag26@gmail.com"
+    assert "Bay Steel Supply" in user_email["body"]
+    assert "sales@baysteel.example" in user_email["body"]
+    assert "steel brackets" in user_email["body"]
 
 
 def test_buyer_agent_blocks_send_when_email_not_held():
