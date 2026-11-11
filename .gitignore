@@ -1,0 +1,30 @@
+# Secrets — never commit.
+.env
+*.env
+secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Data — only runtime-generated artefacts are ignored. Seeded demo data
+# (data/plans/, data/suppliers.json, etc., owned by other workers) is
+# committable, so do NOT ignore the whole data/ directory.
+data/mock_mail/
+data/exports/
+data/checkpoints.sqlite
+data/buildbuy.db
+data/contact_sharing.json
+*.db
+*.duckdb
+*.sqlite
+*.sqlite3
+
+# Misc
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

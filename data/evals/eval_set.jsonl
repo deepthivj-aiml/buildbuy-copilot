@@ -1,0 +1,73 @@
+{"question": "What is the floor area of Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "85.0 square metres", "source_doc": "plan-001-overview", "kind": "plan_qa"}
+{"question": "How many rooms are in Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "4 rooms", "source_doc": "plan-001-overview", "kind": "plan_qa"}
+{"question": "How many fixtures are in Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "12 fixtures", "source_doc": "plan-001-overview", "kind": "plan_qa"}
+{"question": "What scale is Maple Court ADU \u2014 2-bedroom accessory dwelling unit drawn at?", "expected_answer": "scale 1:50", "source_doc": "plan-001-overview", "kind": "plan_qa"}
+{"question": "What concrete grade is specified for Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "grade C25/30,", "source_doc": "plan-001-C-01", "kind": "plan_qa"}
+{"question": "How thick is the concrete slab in Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "150 mm thick", "source_doc": "plan-001-C-01", "kind": "plan_qa"}
+{"question": "How much steel reinforcement per cubic metre in Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "85 kg per cubic metre", "source_doc": "plan-001-C-02", "kind": "plan_qa"}
+{"question": "How many bricks per square metre of wall in Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "50 bricks per square metre", "source_doc": "plan-001-C-03", "kind": "plan_qa"}
+{"question": "How many square metres of tiles in Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "28 square metres", "source_doc": "plan-001-C-04", "kind": "plan_qa"}
+{"question": "How many linear metres of timber in Maple Court ADU \u2014 2-bedroom accessory dwelling unit?", "expected_answer": "120 linear metres", "source_doc": "plan-001-C-05", "kind": "plan_qa"}
+{"question": "What is the floor area of Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "120.0 square metres", "source_doc": "plan-002-overview", "kind": "plan_qa"}
+{"question": "How many rooms are in Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "3 rooms", "source_doc": "plan-002-overview", "kind": "plan_qa"}
+{"question": "How many fixtures are in Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "8 fixtures", "source_doc": "plan-002-overview", "kind": "plan_qa"}
+{"question": "What scale is Cedar Workshop \u2014 single-storey workshop with store drawn at?", "expected_answer": "scale 1:50", "source_doc": "plan-002-overview", "kind": "plan_qa"}
+{"question": "What concrete grade is specified for Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "grade C30/37,", "source_doc": "plan-002-C-01", "kind": "plan_qa"}
+{"question": "How thick is the concrete slab in Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "200 mm thick", "source_doc": "plan-002-C-01", "kind": "plan_qa"}
+{"question": "How much steel reinforcement per cubic metre in Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "90 kg per cubic metre", "source_doc": "plan-002-C-02", "kind": "plan_qa"}
+{"question": "How many bricks per square metre of wall in Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "50 bricks per square metre", "source_doc": "plan-002-C-03", "kind": "plan_qa"}
+{"question": "How many square metres of tiles in Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "15 square metres", "source_doc": "plan-002-C-04", "kind": "plan_qa"}
+{"question": "How many linear metres of timber in Cedar Workshop \u2014 single-storey workshop with store?", "expected_answer": "210 linear metres", "source_doc": "plan-002-C-05", "kind": "plan_qa"}
+{"question": "What is the floor area of Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "45.0 square metres", "source_doc": "plan-003-overview", "kind": "plan_qa"}
+{"question": "How many rooms are in Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "2 rooms", "source_doc": "plan-003-overview", "kind": "plan_qa"}
+{"question": "How many fixtures are in Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "6 fixtures", "source_doc": "plan-003-overview", "kind": "plan_qa"}
+{"question": "What scale is Willow Garage Conversion \u2014 garage to home office drawn at?", "expected_answer": "scale 1:50", "source_doc": "plan-003-overview", "kind": "plan_qa"}
+{"question": "What concrete grade is specified for Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "grade C25/30", "source_doc": "plan-003-C-01", "kind": "plan_qa"}
+{"question": "How much steel reinforcement per cubic metre in Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "85 kg per cubic metre", "source_doc": "plan-003-C-02", "kind": "plan_qa"}
+{"question": "How many bricks per square metre of wall in Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "50 bricks per square metre", "source_doc": "plan-003-C-03", "kind": "plan_qa"}
+{"question": "How many square metres of tiles in Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "10 square metres", "source_doc": "plan-003-C-04", "kind": "plan_qa"}
+{"question": "How many linear metres of timber in Willow Garage Conversion \u2014 garage to home office?", "expected_answer": "65 linear metres", "source_doc": "plan-003-C-05", "kind": "plan_qa"}
+{"question": "Which supplier in Fremont supplies concrete?", "expected_answer": "Bay Area Building Supply", "source_doc": "supplier-sup01", "kind": "supplier_search"}
+{"question": "Which supplier in Fremont supplies steel?", "expected_answer": "Bay Area Building Supply", "source_doc": "supplier-sup01", "kind": "supplier_search"}
+{"question": "What is the lead time of Bay Area Building Supply?", "expected_answer": "3 days", "source_doc": "supplier-sup01", "kind": "supplier_search"}
+{"question": "What certifications does Bay Area Building Supply hold?", "expected_answer": "ISO 9001", "source_doc": "supplier-sup01", "kind": "supplier_search"}
+{"question": "Which supplier in Hayward supplies concrete?", "expected_answer": "Golden State Materials Co", "source_doc": "supplier-sup02", "kind": "supplier_search"}
+{"question": "Which supplier in Hayward supplies bricks?", "expected_answer": "Golden State Materials Co", "source_doc": "supplier-sup02", "kind": "supplier_search"}
+{"question": "What is the lead time of Golden State Materials Co?", "expected_answer": "5 days", "source_doc": "supplier-sup02", "kind": "supplier_search"}
+{"question": "What certifications does Golden State Materials Co hold?", "expected_answer": "none", "source_doc": "supplier-sup02", "kind": "supplier_search"}
+{"question": "Which supplier in San Jose supplies timber?", "expected_answer": "Silicon Valley Lumber & Timber", "source_doc": "supplier-sup03", "kind": "supplier_search"}
+{"question": "What is the lead time of Silicon Valley Lumber & Timber?", "expected_answer": "4 days", "source_doc": "supplier-sup03", "kind": "supplier_search"}
+{"question": "What certifications does Silicon Valley Lumber & Timber hold?", "expected_answer": "FSC Chain of Custody, ISO 9001", "source_doc": "supplier-sup03", "kind": "supplier_search"}
+{"question": "Which supplier in Oakland supplies bricks?", "expected_answer": "East Bay Brick & Masonry", "source_doc": "supplier-sup04", "kind": "supplier_search"}
+{"question": "Which supplier in Oakland supplies tiles?", "expected_answer": "East Bay Brick & Masonry", "source_doc": "supplier-sup04", "kind": "supplier_search"}
+{"question": "What is the lead time of East Bay Brick & Masonry?", "expected_answer": "6 days", "source_doc": "supplier-sup04", "kind": "supplier_search"}
+{"question": "What certifications does East Bay Brick & Masonry hold?", "expected_answer": "ISO 9001", "source_doc": "supplier-sup04", "kind": "supplier_search"}
+{"question": "Which supplier in Redwood City supplies tiles?", "expected_answer": "Peninsula Tile & Stone", "source_doc": "supplier-sup05", "kind": "supplier_search"}
+{"question": "What is the lead time of Peninsula Tile & Stone?", "expected_answer": "7 days", "source_doc": "supplier-sup05", "kind": "supplier_search"}
+{"question": "What certifications does Peninsula Tile & Stone hold?", "expected_answer": "none", "source_doc": "supplier-sup05", "kind": "supplier_search"}
+{"question": "Which supplier in Union City supplies steel?", "expected_answer": "Tri-City Steel Works", "source_doc": "supplier-sup06", "kind": "supplier_search"}
+{"question": "What is the lead time of Tri-City Steel Works?", "expected_answer": "4 days", "source_doc": "supplier-sup06", "kind": "supplier_search"}
+{"question": "What certifications does Tri-City Steel Works hold?", "expected_answer": "ISO 9001, ASTM A615 mill certification", "source_doc": "supplier-sup06", "kind": "supplier_search"}
+{"question": "Which supplier in Alameda supplies concrete?", "expected_answer": "Alameda Concrete Supply", "source_doc": "supplier-sup07", "kind": "supplier_search"}
+{"question": "What is the lead time of Alameda Concrete Supply?", "expected_answer": "2 days", "source_doc": "supplier-sup07", "kind": "supplier_search"}
+{"question": "What certifications does Alameda Concrete Supply hold?", "expected_answer": "ISO 9001", "source_doc": "supplier-sup07", "kind": "supplier_search"}
+{"question": "Which supplier in Santa Clara supplies steel?", "expected_answer": "South Bay Hardware & Steel", "source_doc": "supplier-sup08", "kind": "supplier_search"}
+{"question": "Which supplier in Santa Clara supplies bricks?", "expected_answer": "South Bay Hardware & Steel", "source_doc": "supplier-sup08", "kind": "supplier_search"}
+{"question": "What is the lead time of South Bay Hardware & Steel?", "expected_answer": "3 days", "source_doc": "supplier-sup08", "kind": "supplier_search"}
+{"question": "What certifications does South Bay Hardware & Steel hold?", "expected_answer": "none", "source_doc": "supplier-sup08", "kind": "supplier_search"}
+{"question": "Which supplier in Novato supplies concrete?", "expected_answer": "North Bay Building Materials", "source_doc": "supplier-sup09", "kind": "supplier_search"}
+{"question": "Which supplier in Novato supplies timber?", "expected_answer": "North Bay Building Materials", "source_doc": "supplier-sup09", "kind": "supplier_search"}
+{"question": "Which supplier in Novato supplies tiles?", "expected_answer": "North Bay Building Materials", "source_doc": "supplier-sup09", "kind": "supplier_search"}
+{"question": "What is the lead time of North Bay Building Materials?", "expected_answer": "5 days", "source_doc": "supplier-sup09", "kind": "supplier_search"}
+{"question": "What certifications does North Bay Building Materials hold?", "expected_answer": "ISO 9001", "source_doc": "supplier-sup09", "kind": "supplier_search"}
+{"question": "Which supplier in Modesto supplies concrete?", "expected_answer": "Central Valley Aggregate Co", "source_doc": "supplier-sup10", "kind": "supplier_search"}
+{"question": "Which supplier in Modesto supplies bricks?", "expected_answer": "Central Valley Aggregate Co", "source_doc": "supplier-sup10", "kind": "supplier_search"}
+{"question": "What is the lead time of Central Valley Aggregate Co?", "expected_answer": "8 days", "source_doc": "supplier-sup10", "kind": "supplier_search"}
+{"question": "What certifications does Central Valley Aggregate Co hold?", "expected_answer": "none", "source_doc": "supplier-sup10", "kind": "supplier_search"}
+{"question": "Which supplier in Portland supplies timber?", "expected_answer": "Pacific Northwest Timber Co", "source_doc": "supplier-sup11", "kind": "supplier_search"}
+{"question": "What is the lead time of Pacific Northwest Timber Co?", "expected_answer": "9 days", "source_doc": "supplier-sup11", "kind": "supplier_search"}
+{"question": "What certifications does Pacific Northwest Timber Co hold?", "expected_answer": "FSC Chain of Custody", "source_doc": "supplier-sup11", "kind": "supplier_search"}
+{"question": "Which supplier in Phoenix supplies bricks?", "expected_answer": "Desert Southwest Masonry", "source_doc": "supplier-sup12", "kind": "supplier_search"}
+{"question": "Which supplier in Phoenix supplies tiles?", "expected_answer": "Desert Southwest Masonry", "source_doc": "supplier-sup12", "kind": "supplier_search"}
+{"question": "What is the lead time of Desert Southwest Masonry?", "expected_answer": "10 days", "source_doc": "supplier-sup12", "kind": "supplier_search"}
+{"question": "What certifications does Desert Southwest Masonry hold?", "expected_answer": "ISO 9001", "source_doc": "supplier-sup12", "kind": "supplier_search"}

@@ -1,0 +1,93 @@
+# BuildBuy Copilot — local Docker run (reproducible, $0).
+#   docker compose build
+#   docker compose up -d
+#   docker compose ps            # api, frontend, db, redis all Up / healthy
+#   docker compose logs -f api   # Ctrl+C stops following, not the containers
+#   docker compose down          # stops, keeps data volumes
+#   docker compose down -v       # stops AND wipes local data — only when you mean it
+#
+# URLs are the same as without Docker: frontend http://localhost:8501,
+# API docs http://localhost:8000/docs, health http://localhost:8000/health.
+# Inside the containers the frontend talks to http://api:8000 (API_URL),
+# the API talks to the `db` and `redis` services — never to localhost.
+#
+# NO SECRETS in this file: POSTGRES_PASSWORD comes from .env
+# (POSTGRES_PASSWORD=...); the value below is a local-dev placeholder used
+# only when .env has no value, and must be overridden for any shared host.
+# LLM / email keys are NOT here — they live in .env (never committed).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://buildbuy:${POSTGRES_PASSWORD:-buildbuy-local-dev}@db:5432/buildbuy
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-mock}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      USER_EMAIL: ${USER_EMAIL:-deepthiag26@gmail.com}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: buildbuy
+      POSTGRES_USER: buildbuy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-buildbuy-local-dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buildbuy -d buildbuy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

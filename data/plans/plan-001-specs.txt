@@ -1,0 +1,9 @@
+Maple Court ADU — Structural Specification (synthetic demo)
+Sheet A-101, scale 1:50, Fremont, CA.
+
+Clause 3.2 — Concrete slab: grade C25/30, 150 mm thick, on compacted granular base.
+Clause 3.4 — Reinforcement: deformed steel rebar, 85 kg per cubic metre of concrete, laps 600 mm minimum.
+Clause 4.1 — Masonry walls: clay bricks, 50 bricks per square metre of wall, mortar mix 1:4 cement:sand.
+Clause 5.2 — Floor finishes: ceramic tiles to bathroom and kitchen, 28 square metres, adhesive bed 3 mm.
+Clause 6.1 — Roof framing: softwood timber, grade C24, 120 linear metres of joists and rafters.
+Clause 7.3 — Fixtures: 12 plumbing and lighting fixtures as scheduled on sheet A-101.

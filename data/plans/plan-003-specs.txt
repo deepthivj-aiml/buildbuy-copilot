@@ -1,0 +1,9 @@
+Willow Garage Conversion — Structural Specification (synthetic demo)
+Sheet A-103, scale 1:50, Union City, CA.
+
+Clause 3.2 — Concrete slab: existing slab retained, 120 mm topping grade C25/30 where levelled.
+Clause 3.4 — Reinforcement: deformed steel rebar, 85 kg per cubic metre of new concrete, laps 600 mm minimum.
+Clause 4.1 — Masonry walls: clay bricks, 50 bricks per square metre of new wall, mortar mix 1:4 cement:sand.
+Clause 5.2 — Floor finishes: ceramic tiles to kitchenette, 10 square metres, adhesive bed 3 mm.
+Clause 6.1 — Roof framing: softwood timber, grade C24, 65 linear metres of ceiling joists.
+Clause 7.3 — Fixtures: 6 plumbing and lighting fixtures as scheduled on sheet A-103.

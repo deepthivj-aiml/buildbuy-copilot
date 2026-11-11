@@ -1,0 +1,9 @@
+Cedar Workshop — Structural Specification (synthetic demo)
+Sheet A-102, scale 1:50, Hayward, CA.
+
+Clause 3.2 — Concrete slab: grade C30/37, 200 mm thick, reinforced, on compacted granular base.
+Clause 3.4 — Reinforcement: deformed steel rebar, 90 kg per cubic metre of concrete, laps 600 mm minimum.
+Clause 4.1 — Masonry walls: clay bricks, 50 bricks per square metre of wall, mortar mix 1:4 cement:sand.
+Clause 5.2 — Floor finishes: ceramic tiles to washroom, 15 square metres, adhesive bed 3 mm.
+Clause 6.1 — Roof framing: softwood timber, grade C24, 210 linear metres of joists and purlins.
+Clause 7.3 — Fixtures: 8 plumbing and lighting fixtures as scheduled on sheet A-102.

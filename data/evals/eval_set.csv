@@ -1,0 +1,74 @@
+question,expected_answer,source_doc,kind
+What is the floor area of Maple Court ADU — 2-bedroom accessory dwelling unit?,85.0 square metres,plan-001-overview,plan_qa
+How many rooms are in Maple Court ADU — 2-bedroom accessory dwelling unit?,4 rooms,plan-001-overview,plan_qa
+How many fixtures are in Maple Court ADU — 2-bedroom accessory dwelling unit?,12 fixtures,plan-001-overview,plan_qa
+What scale is Maple Court ADU — 2-bedroom accessory dwelling unit drawn at?,scale 1:50,plan-001-overview,plan_qa
+What concrete grade is specified for Maple Court ADU — 2-bedroom accessory dwelling unit?,"grade C25/30,",plan-001-C-01,plan_qa
+How thick is the concrete slab in Maple Court ADU — 2-bedroom accessory dwelling unit?,150 mm thick,plan-001-C-01,plan_qa
+How much steel reinforcement per cubic metre in Maple Court ADU — 2-bedroom accessory dwelling unit?,85 kg per cubic metre,plan-001-C-02,plan_qa
+How many bricks per square metre of wall in Maple Court ADU — 2-bedroom accessory dwelling unit?,50 bricks per square metre,plan-001-C-03,plan_qa
+How many square metres of tiles in Maple Court ADU — 2-bedroom accessory dwelling unit?,28 square metres,plan-001-C-04,plan_qa
+How many linear metres of timber in Maple Court ADU — 2-bedroom accessory dwelling unit?,120 linear metres,plan-001-C-05,plan_qa
+What is the floor area of Cedar Workshop — single-storey workshop with store?,120.0 square metres,plan-002-overview,plan_qa
+How many rooms are in Cedar Workshop — single-storey workshop with store?,3 rooms,plan-002-overview,plan_qa
+How many fixtures are in Cedar Workshop — single-storey workshop with store?,8 fixtures,plan-002-overview,plan_qa
+What scale is Cedar Workshop — single-storey workshop with store drawn at?,scale 1:50,plan-002-overview,plan_qa
+What concrete grade is specified for Cedar Workshop — single-storey workshop with store?,"grade C30/37,",plan-002-C-01,plan_qa
+How thick is the concrete slab in Cedar Workshop — single-storey workshop with store?,200 mm thick,plan-002-C-01,plan_qa
+How much steel reinforcement per cubic metre in Cedar Workshop — single-storey workshop with store?,90 kg per cubic metre,plan-002-C-02,plan_qa
+How many bricks per square metre of wall in Cedar Workshop — single-storey workshop with store?,50 bricks per square metre,plan-002-C-03,plan_qa
+How many square metres of tiles in Cedar Workshop — single-storey workshop with store?,15 square metres,plan-002-C-04,plan_qa
+How many linear metres of timber in Cedar Workshop — single-storey workshop with store?,210 linear metres,plan-002-C-05,plan_qa
+What is the floor area of Willow Garage Conversion — garage to home office?,45.0 square metres,plan-003-overview,plan_qa
+How many rooms are in Willow Garage Conversion — garage to home office?,2 rooms,plan-003-overview,plan_qa
+How many fixtures are in Willow Garage Conversion — garage to home office?,6 fixtures,plan-003-overview,plan_qa
+What scale is Willow Garage Conversion — garage to home office drawn at?,scale 1:50,plan-003-overview,plan_qa
+What concrete grade is specified for Willow Garage Conversion — garage to home office?,grade C25/30,plan-003-C-01,plan_qa
+How much steel reinforcement per cubic metre in Willow Garage Conversion — garage to home office?,85 kg per cubic metre,plan-003-C-02,plan_qa
+How many bricks per square metre of wall in Willow Garage Conversion — garage to home office?,50 bricks per square metre,plan-003-C-03,plan_qa
+How many square metres of tiles in Willow Garage Conversion — garage to home office?,10 square metres,plan-003-C-04,plan_qa
+How many linear metres of timber in Willow Garage Conversion — garage to home office?,65 linear metres,plan-003-C-05,plan_qa
+Which supplier in Fremont supplies concrete?,Bay Area Building Supply,supplier-sup01,supplier_search
+Which supplier in Fremont supplies steel?,Bay Area Building Supply,supplier-sup01,supplier_search
+What is the lead time of Bay Area Building Supply?,3 days,supplier-sup01,supplier_search
+What certifications does Bay Area Building Supply hold?,ISO 9001,supplier-sup01,supplier_search
+Which supplier in Hayward supplies concrete?,Golden State Materials Co,supplier-sup02,supplier_search
+Which supplier in Hayward supplies bricks?,Golden State Materials Co,supplier-sup02,supplier_search
+What is the lead time of Golden State Materials Co?,5 days,supplier-sup02,supplier_search
+What certifications does Golden State Materials Co hold?,none,supplier-sup02,supplier_search
+Which supplier in San Jose supplies timber?,Silicon Valley Lumber & Timber,supplier-sup03,supplier_search
+What is the lead time of Silicon Valley Lumber & Timber?,4 days,supplier-sup03,supplier_search
+What certifications does Silicon Valley Lumber & Timber hold?,"FSC Chain of Custody, ISO 9001",supplier-sup03,supplier_search
+Which supplier in Oakland supplies bricks?,East Bay Brick & Masonry,supplier-sup04,supplier_search
+Which supplier in Oakland supplies tiles?,East Bay Brick & Masonry,supplier-sup04,supplier_search
+What is the lead time of East Bay Brick & Masonry?,6 days,supplier-sup04,supplier_search
+What certifications does East Bay Brick & Masonry hold?,ISO 9001,supplier-sup04,supplier_search
+Which supplier in Redwood City supplies tiles?,Peninsula Tile & Stone,supplier-sup05,supplier_search
+What is the lead time of Peninsula Tile & Stone?,7 days,supplier-sup05,supplier_search
+What certifications does Peninsula Tile & Stone hold?,none,supplier-sup05,supplier_search
+Which supplier in Union City supplies steel?,Tri-City Steel Works,supplier-sup06,supplier_search
+What is the lead time of Tri-City Steel Works?,4 days,supplier-sup06,supplier_search
+What certifications does Tri-City Steel Works hold?,"ISO 9001, ASTM A615 mill certification",supplier-sup06,supplier_search
+Which supplier in Alameda supplies concrete?,Alameda Concrete Supply,supplier-sup07,supplier_search
+What is the lead time of Alameda Concrete Supply?,2 days,supplier-sup07,supplier_search
+What certifications does Alameda Concrete Supply hold?,ISO 9001,supplier-sup07,supplier_search
+Which supplier in Santa Clara supplies steel?,South Bay Hardware & Steel,supplier-sup08,supplier_search
+Which supplier in Santa Clara supplies bricks?,South Bay Hardware & Steel,supplier-sup08,supplier_search
+What is the lead time of South Bay Hardware & Steel?,3 days,supplier-sup08,supplier_search
+What certifications does South Bay Hardware & Steel hold?,none,supplier-sup08,supplier_search
+Which supplier in Novato supplies concrete?,North Bay Building Materials,supplier-sup09,supplier_search
+Which supplier in Novato supplies timber?,North Bay Building Materials,supplier-sup09,supplier_search
+Which supplier in Novato supplies tiles?,North Bay Building Materials,supplier-sup09,supplier_search
+What is the lead time of North Bay Building Materials?,5 days,supplier-sup09,supplier_search
+What certifications does North Bay Building Materials hold?,ISO 9001,supplier-sup09,supplier_search
+Which supplier in Modesto supplies concrete?,Central Valley Aggregate Co,supplier-sup10,supplier_search
+Which supplier in Modesto supplies bricks?,Central Valley Aggregate Co,supplier-sup10,supplier_search
+What is the lead time of Central Valley Aggregate Co?,8 days,supplier-sup10,supplier_search
+What certifications does Central Valley Aggregate Co hold?,none,supplier-sup10,supplier_search
+Which supplier in Portland supplies timber?,Pacific Northwest Timber Co,supplier-sup11,supplier_search
+What is the lead time of Pacific Northwest Timber Co?,9 days,supplier-sup11,supplier_search
+What certifications does Pacific Northwest Timber Co hold?,FSC Chain of Custody,supplier-sup11,supplier_search
+Which supplier in Phoenix supplies bricks?,Desert Southwest Masonry,supplier-sup12,supplier_search
+Which supplier in Phoenix supplies tiles?,Desert Southwest Masonry,supplier-sup12,supplier_search
+What is the lead time of Desert Southwest Masonry?,10 days,supplier-sup12,supplier_search
+What certifications does Desert Southwest Masonry hold?,ISO 9001,supplier-sup12,supplier_search
