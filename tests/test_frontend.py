@@ -121,6 +121,21 @@ def test_takeoff_updates_from_typed_requirement():
     assert (timber["quantity"], timber["unit"]) == (30, "pcs")
     assert "18" in timber["method"]
 
+    # Re-applying the same requirement (Parse, then "Find what I
+    # need ->", then a re-render) must keep the ORIGINAL plan value
+    # in the method/note — live bug 2026-11-10 21:32: the second
+    # apply said the plan estimate was 10 m3, when the plan said
+    # 2.4 m3. The first override stores plan_quantity / plan_unit.
+    mats, note = helpers.apply_requirement_to_takeoff(
+        base, helpers.parse_requirement("concrete, 10 m3, Fremont"))
+    mats, note = helpers.apply_requirement_to_takeoff(mats, req)
+    conc = next(m for m in mats if "Concrete" in m["material"])
+    assert conc["quantity"] == 10
+    assert conc["plan_quantity"] == 2.4 and conc["plan_unit"] == "m3"
+    assert "was plan estimate 2.4 m3" in note
+    assert "plan estimate of 2.4 m3" in conc["method"]
+    assert "plan estimate of 10 m3" not in conc["method"]
+
     # A new material appends a line instead of touching other lines.
     mats, _note = helpers.apply_requirement_to_takeoff(
         base, helpers.parse_requirement("cement, 20 bags, Hayward"))
@@ -459,13 +474,13 @@ def test_buyer_agent_email_preview_edit_and_send():
     # The preview body lives in the editable text area, so read it there.
     at.checkbox(key="send-share-Bay Steel Supply").set_value(True).run()
     assert not at.exception, at.exception
-    on_body = at.text_area(key="quote-body-Bay Steel Supply-shared").value
+    on_body = at.text_area(key="quote-body-Bay Steel Supply-shared-v0").value
     assert "Deepthi Jainlal" in on_body
     assert "deepthiag26@gmail.com" in on_body
     # Sharing back OFF, edit the body, send: the sent text is the
     # edited text, with contact stripped because sharing is OFF.
     at.checkbox(key="send-share-Bay Steel Supply").set_value(False).run()
-    at.text_area(key="quote-body-Bay Steel Supply-private").set_value(
+    at.text_area(key="quote-body-Bay Steel Supply-private-v0").set_value(
         "EDITED BODY — please quote 50 x steel brackets. "
         "I am Deepthi Jainlal, deepthiag26@gmail.com.").run()
     assert not at.exception, at.exception
@@ -535,3 +550,110 @@ def test_all_seven_tabs_render_after_restyle():
     assert "replied" in _all_text(at)
     at.radio[0].set_value("6 · Accuracy").run()
     assert "no data yet" in _all_text(at)
+
+
+# ------------------------------------------------------------- live crash fix
+# (2026-11-10 21:32): "Find what I need ->" raised
+# StreamlitWidgetAlreadyInstantiatedError because the button handler
+# assigned session_state["nav"] after the keyed radio was created.
+# Buttons now set "pending_nav", applied before the radio exists.
+def _click_button(at, label):
+    btns = [b for b in at.button if b.label == label]
+    assert len(btns) == 1, f"button {label!r}: found {len(btns)}"
+    btns[0].click().run()
+    assert not at.exception, (label, at.exception)
+
+
+def test_find_button_navigates_first_try():
+    """The live crash: parse "concrete, 10 m3, Fremont", click
+    "Find what I need ->" — no exception, lands on Plan & Materials
+    with concrete at 10 m3. Every other navigation button in the app
+    must also work first try (Find suppliers -> tab 3, Contact top 3
+    -> tab 4)."""
+    at = _app()
+    at.text_area(key="requirement_input").set_value("concrete, 10 m3, Fremont").run()
+    at.button(key="parse_requirement_btn").click().run()
+    assert not at.exception, at.exception
+    _click_button(at, "Find what I need →")
+    assert at.session_state["nav"] == "2 · Plan & Materials"
+    df = at.data_editor[0].value
+    conc = df[df["material"].str.contains("Concrete")]
+    assert float(conc.iloc[0]["quantity"]) == 10.0
+    # The original plan value is still 2.4 in the method, even after
+    # Parse + Find re-applied the requirement.
+    assert "plan estimate of 2.4 m3" in str(conc.iloc[0]["method"])
+    _click_button(at, "Find suppliers for these materials →")
+    assert at.session_state["nav"] == "3 · Suppliers & Twin"
+    _click_button(at, "Contact top 3 suppliers →")
+    assert at.session_state["nav"] == "4 · Buyer Agent"
+
+
+def test_buyer_agent_email_card_count_is_honest():
+    """Live quirk 2026-11-10 21:32: for concrete x10 only ONE email
+    card renders. That is correct — the other 5 suppliers are
+    excluded by MOQ (quantity below their minimum) — but the UI must
+    SAY so instead of promising "top 3" cards."""
+    at = _app()
+    at.session_state["requirement"] = {
+        "raw": "concrete, 10 m3, Fremont", "item": "concrete",
+        "quantity": 10, "unit": "m3", "location": "Fremont",
+        "deadline": "", "budget": None}
+    at.radio[0].set_value("4 · Buyer Agent").run()
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "Showing 1 email card" in text
+    assert "Bay Steel Supply (MOQ 25)" in text
+    assert "Sierra Building Supply" in text
+    # The bulk-send button names the real sendable count, not "top 3".
+    labels = [b.label for b in at.button]
+    assert any("1 sendable supplier" in lab for lab in labels), labels
+    # Steel brackets x50: 3 sendable cards (Bay, Golden, Sierra are
+    # eligible + have emails; Pacific/Delta are MOQ-excluded).
+    at2 = _app()
+    at2.session_state["requirement"] = {
+        "raw": "steel brackets, 50 units", "item": "steel brackets",
+        "quantity": 50, "unit": "pcs", "location": "Fremont",
+        "deadline": "Friday", "budget": 400.0}
+    at2.radio[0].set_value("4 · Buyer Agent").run()
+    assert not at2.exception, at2.exception
+    assert "Showing 3 email cards" in _all_text(at2)
+
+
+def test_reset_to_draft_restores_subject_and_body():
+    """Live quirk 2026-11-10 21:32: "Reset to draft" did not visibly
+    restore the subject textbox. Deleting the widget's session-state
+    key alone does not reset it in a real browser (the browser
+    re-sends the old value) — Reset now bumps a draft version so the
+    widgets are created under brand-new keys from the draft."""
+    at = _app()
+    at.session_state["requirement"] = {
+        "raw": "steel brackets, 50 units, Fremont, by Friday, under $400",
+        "item": "steel brackets", "quantity": 50, "unit": "pcs",
+        "location": "Fremont", "deadline": "Friday", "budget": 400.0}
+    at.radio[0].set_value("4 · Buyer Agent").run()
+    assert not at.exception, at.exception
+    # Edit + save: the "How we will contact them" line must show the
+    # SAVED subject, not the original generated one.
+    at.text_input(key="quote-subject-Bay Steel Supply-private-v0").set_value(
+        "EDITED SUBJECT").run()
+    at.button(key="quote-save-Bay Steel Supply").click().run()
+    assert not at.exception, at.exception
+    assert "EDITED SUBJECT" in _all_text(at)
+    assert at.session_state["quote_drafts"]["Bay Steel Supply"]["subject"] == "EDITED SUBJECT"
+    # Edit again, then Reset: subject AND body come back as the draft,
+    # under new (v1) widget keys, and the saved draft is gone.
+    at.text_input(key="quote-subject-Bay Steel Supply-private-v0").set_value(
+        "EDITED AGAIN").run()
+    at.text_area(key="quote-body-Bay Steel Supply-private-v0").set_value(
+        "EDITED BODY AGAIN").run()
+    at.button(key="quote-reset-Bay Steel Supply").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["quote_draft_version"]["Bay Steel Supply"] == 1
+    assert "Bay Steel Supply" not in at.session_state["quote_drafts"]
+    assert at.text_input(
+        key="quote-subject-Bay Steel Supply-private-v1").value == \
+        "Quote request — 50 x steel brackets"
+    assert at.text_area(
+        key="quote-body-Bay Steel Supply-private-v1").value.startswith(
+        "Hello,\n\nI am BuildBuy Copilot, acting as the buying agent")
+    assert "EDITED AGAIN" not in _all_text(at)

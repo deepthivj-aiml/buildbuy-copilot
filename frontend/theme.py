@@ -8,14 +8,18 @@ synthetic. Tested alone: .venv/bin/python -m pytest tests/test_theme.py -v
 """
 import html
 
-# Consistent palette across all 7 tabs. Light theme, dark text on light
-# backgrounds throughout (contrast-first: colour accents, never
-# colour-as-the-only-signal).
+# Consistent palette across all 7 tabs. Warm brown theme (2026-11-10
+# 21:32, user request): deep brown primary, warm cream background,
+# dark brown text. Light theme, dark text on light backgrounds
+# throughout (contrast-first: colour accents, never colour-as-the-
+# only-signal). Semantic chip colours (green best value / blue
+# cheapest / purple highest quality) are kept distinct — they carry
+# a category meaning and always keep their text label.
 PALETTE = {
-    "primary": "#4F46E5",      # indigo — primary buttons, accents
-    "primary_dark": "#3730A3",
-    "violet": "#7C3AED",
-    "teal": "#0D9488",
+    "primary": "#7C4A21",      # deep brown — primary buttons, accents
+    "primary_dark": "#5C3413",
+    "violet": "#A9713F",       # caramel — warm accent (was violet)
+    "teal": "#B45309",         # amber — warm accent (was teal)
     "green": "#15803D",
     "green_bg": "#DCFCE7",
     "blue": "#1D4ED8",
@@ -26,42 +30,42 @@ PALETTE = {
     "amber_bg": "#FEF3C7",
     "red": "#B91C1C",
     "red_bg": "#FEE2E2",
-    "ink": "#1F2937",
-    "muted": "#6B7280",
-    "page_bg": "#F8F7FF",
-    "card_border": "#E5E7EB",
+    "ink": "#2E1F14",
+    "muted": "#6B5D4F",
+    "page_bg": "#FBF6EF",
+    "card_border": "#E5DCCB",
 }
 
 THEME_CSS = """
 <style>
 .block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 1120px; }
 h1 { font-size: 1.7rem; }
-h2 { font-size: 1.25rem; margin-top: 1.2rem; border-left: 4px solid #4F46E5;
+h2 { font-size: 1.25rem; margin-top: 1.2rem; border-left: 4px solid #7C4A21;
      padding-left: 10px; }
 h3 { font-size: 1.05rem; }
 .stButton>button { min-height: 44px; font-size: 1rem; border-radius: 10px;
                    transition: transform .12s ease, box-shadow .12s ease; }
 .stButton>button:hover { transform: translateY(-1px);
-                         box-shadow: 0 4px 12px rgba(79,70,229,.25); }
+                         box-shadow: 0 4px 12px rgba(124,74,33,.25); }
 [data-testid="stBaseButton-primary"] {
-    background: linear-gradient(135deg, #4F46E5, #7C3AED) !important;
+    background: linear-gradient(135deg, #7C4A21, #A9713F) !important;
     color: #ffffff !important; border: none !important;
-    box-shadow: 0 4px 14px rgba(79,70,229,.35); }
+    box-shadow: 0 4px 14px rgba(124,74,33,.35); }
 [data-testid="stBaseButton-secondary"] {
-    background: #ffffff !important; color: #4F46E5 !important;
-    border: 1.5px solid #4F46E5 !important; }
-[data-testid="stBaseButton-secondary"]:hover { background: #EEF2FF !important; }
-input:focus, textarea:focus, select:focus { border-color: #4F46E5 !important; }
+    background: #ffffff !important; color: #7C4A21 !important;
+    border: 1.5px solid #7C4A21 !important; }
+[data-testid="stBaseButton-secondary"]:hover { background: #F3E8D8 !important; }
+input:focus, textarea:focus, select:focus { border-color: #7C4A21 !important; }
 div[data-testid="stRadio"] label:has(input:checked) {
-    background: #4F46E5; color: #ffffff; border-radius: 999px; padding: 4px 12px; }
+    background: #7C4A21; color: #ffffff; border-radius: 999px; padding: 4px 12px; }
 div[data-testid="stRadio"] label { border-radius: 999px; padding: 4px 10px;
                                   font-weight: 600; }
-/* Hero banner (Start tab) */
-.hero { background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 55%, #0D9488 100%);
+/* Hero banner (Start tab) — warm brown gradient */
+.hero { background: linear-gradient(135deg, #5C3413 0%, #7C4A21 55%, #B45309 100%);
         color: #ffffff; border-radius: 18px; padding: 26px 28px;
-        margin: 6px 0 14px 0; box-shadow: 0 8px 24px rgba(79,70,229,.30); }
+        margin: 6px 0 14px 0; box-shadow: 0 8px 24px rgba(124,74,33,.30); }
 .hero h1 { color: #ffffff; font-size: 2rem; margin: 0 0 6px 0; }
-.hero p { color: #E0E7FF; font-size: 1.05rem; margin: 0 0 12px 0; }
+.hero p { color: #F5E6D3; font-size: 1.05rem; margin: 0 0 12px 0; }
 .hero .hero-pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .hero .hero-pill { background: rgba(255,255,255,.18); color: #ffffff;
                    border: 1px solid rgba(255,255,255,.35); border-radius: 999px;
@@ -90,7 +94,7 @@ div[data-testid="stRadio"] label { border-radius: 999px; padding: 4px 10px;
 .chip-live { background: #DCFCE7; color: #14532D; border: 1px solid #86EFAC; }
 .chip-warn { background: #FEE2E2; color: #7F1D1D; border: 1px solid #FCA5A5; }
 .chip-ok { background: #DCFCE7; color: #14532D; border: 1px solid #86EFAC; }
-.chip-info { background: #E0E7FF; color: #3730A3; border: 1px solid #A5B4FC; }
+.chip-info { background: #F3E8D8; color: #5C3413; border: 1px solid #D9C3A3; }
 .chip-nodata { background: #F3F4F6; color: #4B5563; border: 1px solid #D1D5DB; }
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px;
          font-size: 0.8rem; font-weight: 600; }
@@ -103,11 +107,11 @@ div[data-testid="stRadio"] label { border-radius: 999px; padding: 4px 10px;
 .evidence { font-size: 0.85rem; color: #444; }
 .metric-card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 12px;
                text-align: center; background: #fafafa;
-               border-top: 4px solid #4F46E5;
+               border-top: 4px solid #7C4A21;
                box-shadow: 0 2px 8px rgba(31,41,55,.06);
                transition: transform .12s ease; }
 .metric-card:hover { transform: translateY(-2px); }
-.metric-num { font-size: 1.6rem; font-weight: 700; color: #4F46E5; }
+.metric-num { font-size: 1.6rem; font-weight: 700; color: #7C4A21; }
 /* Buyer-journey stepper */
 .journey { display: flex; align-items: flex-start; gap: 0; margin: 10px 0 4px 0; }
 .jstep { display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -120,9 +124,9 @@ div[data-testid="stRadio"] label { border-radius: 999px; padding: 4px 10px;
               text-align: center; max-width: 76px; line-height: 1.1; }
 .jstep.done .jstep-dot { background: #15803D; border-color: #15803D; color: #fff; }
 .jstep.done .jstep-label { color: #15803D; }
-.jstep.current .jstep-dot { background: #4F46E5; border-color: #4F46E5; color: #fff;
-                           box-shadow: 0 0 0 4px rgba(79,70,229,.25); }
-.jstep.current .jstep-label { color: #4F46E5; }
+.jstep.current .jstep-dot { background: #7C4A21; border-color: #7C4A21; color: #fff;
+                           box-shadow: 0 0 0 4px rgba(124,74,33,.25); }
+.jstep.current .jstep-label { color: #7C4A21; }
 .jstep-connector { flex: 1 1 auto; height: 2px; background: #D1D5DB;
                   margin-top: 15px; min-width: 8px; }
 .jstep-connector.done { background: #15803D; }

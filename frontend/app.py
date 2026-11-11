@@ -197,6 +197,21 @@ def init_state():
                                           "Never share my phone unless I toggle it on."})
     s.setdefault("usage", {"plans": 0, "searches": 0, "buyer_runs": 0})
     s.setdefault("nav", "1 · Start")
+    # Pending navigation (2026-11-10 21:32 crash fix): buttons must NOT
+    # set session_state["nav"] directly — "nav" is the key of the radio
+    # widget below, and Streamlit raises StreamlitWidgetAlready-
+    # InstantiatedError if a widget key is assigned after the widget
+    # was created in the same run. Buttons set "pending_nav" instead;
+    # it is applied to "nav" just BEFORE the radio is created.
+    s.setdefault("pending_nav", None)
+    # Quote-draft widget versions (2026-11-10 21:32 Reset fix): the
+    # editable subject/body widgets carry a version in their key.
+    # "Reset to draft" bumps the version, so a brand-new widget is
+    # created from the regenerated draft — deleting the widget's
+    # session-state key alone does NOT reset it in a real browser,
+    # because the browser re-sends the widget's old value on the next
+    # run and the value= argument is then ignored.
+    s.setdefault("quote_draft_version", {})  # supplier name -> int
 
 
 init_state()
@@ -258,13 +273,23 @@ st.markdown(
 
 NAV = ["1 · Start", "2 · Plan & Materials", "3 · Suppliers & Twin", "4 · Buyer Agent",
        "5 · My Orders", "6 · Accuracy", "7 · Settings"]
-# Keyed radio (key="nav"): the widget value lives in session_state["nav"]
-# and programmatic navigation (buttons setting session_state["nav"] then
-# st.rerun()) works. The old code used index=NAV.index(session_state
-# ["nav"]) with no key — when the index default changed between runs,
-# Streamlit re-initialised the radio from the new default and DROPPED
-# the user's tab click (found by AppTest: every second navigation was
-# silently ignored). A keyed widget has no moving default to reset to.
+# Pending navigation is applied HERE, before the radio is created:
+# assigning session_state["nav"] after this point in the run raises
+# StreamlitWidgetAlreadyInstantiatedError (live crash 2026-11-10
+# 21:32 on "Find what I need ->"). Buttons below set
+# session_state["pending_nav"] and call st.rerun(); the next run
+# applies it here, before the widget exists, and clears it.
+_pending = st.session_state.get("pending_nav")
+if _pending in NAV:
+    st.session_state["nav"] = _pending
+    st.session_state["pending_nav"] = None
+# Keyed radio (key="nav"): the widget value lives in session_state["nav"].
+# The old code used index=NAV.index(session_state["nav"]) with no key —
+# when the index default changed between runs, Streamlit re-initialised
+# the radio from the new default and DROPPED the user's tab click
+# (found by AppTest: every second navigation was silently ignored).
+# A keyed widget has no moving default to reset to — but its key must
+# never be assigned after creation in the same run (see pending_nav).
 nav = st.radio("Section", NAV, horizontal=True, label_visibility="collapsed",
                key="nav")
 
@@ -381,7 +406,7 @@ if nav == "1 · Start":
             st.session_state["materials"] = mats
             st.session_state["takeoff_note"] = note
             st.session_state["usage"]["searches"] += 1
-            st.session_state["nav"] = "2 · Plan & Materials"
+            st.session_state["pending_nav"] = "2 · Plan & Materials"
             st.rerun()
     st.markdown(
         '<p class="trust">Nothing is ordered without your tap. · '
@@ -482,7 +507,7 @@ elif nav == "2 · Plan & Materials":
             st.info("Demo mode: re-run queued. In live mode the plan is re-read with "
                     "your corrections and no extra charge for this one re-run.")
         if st.button("Find suppliers for these materials →", type="primary"):
-            st.session_state["nav"] = "3 · Suppliers & Twin"
+            st.session_state["pending_nav"] = "3 · Suppliers & Twin"
             st.rerun()
 
 # ---------------------------------------------------------------------------
@@ -689,7 +714,7 @@ elif nav == "3 · Suppliers & Twin":
                    "The final choice is yours on the approval screen.")
     if st.button("Contact top 3 suppliers →", type="primary"):
         st.session_state["usage"]["buyer_runs"] += 0  # counted when the draft is sent
-        st.session_state["nav"] = "4 · Buyer Agent"
+        st.session_state["pending_nav"] = "4 · Buyer Agent"
         st.rerun()
 
 # ---------------------------------------------------------------------------
@@ -700,7 +725,7 @@ elif nav == "4 · Buyer Agent":
     st.progress(4 / 5, text="Requirement → Materials → Suppliers → Quotes → Approval")
     req = st.session_state.get("requirement") or {"quantity": 50, "item": "steel brackets"}
     qty = int(req.get("quantity") or 50)
-    rows, _excluded = rank_suppliers(
+    rows, excluded = rank_suppliers(
         st.session_state["suppliers"], qty,
         delivery_location=st.session_state.get("delivery_location", ""),
         transport_rate=st.session_state.get("transport_rate"))
@@ -722,7 +747,8 @@ elif nav == "4 · Buyer Agent":
                "above the cap or after the deadline — enforced in code, not just in a prompt.")
 
     st.subheader("Emails to suppliers — preview, edit, then send")
-    st.caption("One email per supplier, shown IN FULL before anything is sent. "
+    st.caption("One email card per supplier that can actually be emailed, "
+               "shown IN FULL before anything is sent. "
                "Each card shows the supplier's contact details (never invented — "
                "“not held” when missing), HOW they will be contacted (channel, "
                "from, to, subject), and the exact email body. Edit the subject "
@@ -736,6 +762,39 @@ elif nav == "4 · Buyer Agent":
         "email": st.session_state["settings"]["email"],
         "phone": st.session_state["settings"]["phone"],
     }
+    # Honest card count (2026-11-10 21:32, live test): for a small
+    # quantity only ONE supplier may be eligible at all — the rest are
+    # excluded because the quantity is below their MOQ. That is correct
+    # ranking behaviour, not a dropped card — but the UI must say so
+    # instead of promising "top 3" cards. "Sendable" does not depend
+    # on contact sharing, so it is safe to pre-compute here.
+    _previews = {r["name"]: build_quote_email(
+        req, r, share_contact=False, buyer=buyer,
+        max_price=st.session_state["max_price"]) for r in top3}
+    _sendable = [r for r in top3 if _previews[r["name"]]["sendable"]]
+    if not top3:
+        st.warning(
+            "No supplier can fulfil this quantity — every supplier is "
+            "excluded because the quantity is below their MOQ: "
+            + "; ".join(f"{r['name']} (MOQ {r['moq']})" for r in excluded)
+            + ". Raise the quantity, or add a supplier with a lower MOQ.")
+    elif len(_sendable) < 3 or excluded:
+        _reasons = []
+        if excluded:
+            _reasons.append(
+                "excluded by MOQ (quantity below their minimum): "
+                + ", ".join(f"{r['name']} (MOQ {r['moq']})" for r in excluded))
+        _blocked = [r for r in top3 if not _previews[r["name"]]["sendable"]]
+        if _blocked:
+            _reasons.append(
+                "email not held, so no email can be sent: "
+                + ", ".join(r["name"] for r in _blocked))
+        st.info(
+            f"Showing {len(_sendable)} email card"
+            f"{'' if len(_sendable) == 1 else 's'} — only {len(_sendable)} "
+            f"of the {len(top3)} ranked supplier"
+            f"{'' if len(top3) == 1 else 's'} can be emailed for this "
+            f"requirement. " + " ".join(_reasons))
     for r in top3:
         details = supplier_contact_details(r)
         share = st.checkbox(
@@ -751,6 +810,33 @@ elif nav == "4 · Buyer Agent":
             req, r, share_contact=share, buyer=buyer,
             max_price=st.session_state["max_price"])
         saved = st.session_state["quote_drafts"].get(r["name"])
+        # Widget keys carry the sharing state AND a draft version:
+        # Streamlit keeps a widget's value by key, so toggling
+        # sharing must create a fresh widget initialised from the
+        # regenerated preview — otherwise the preview would keep
+        # showing the old text (sharing OFF body after toggling
+        # ON, and vice versa). The version (bumped by "Reset to
+        # draft") is the same mechanism for Reset: deleting the
+        # widget's session-state key alone does NOT reset it in a
+        # real browser, because the browser re-sends the widget's
+        # old value on the next run and the value= argument is
+        # then ignored — a brand-new key is the reliable reset.
+        # The keys are computed BEFORE the contact line below, so the
+        # line can show the subject the textbox currently holds.
+        _version = st.session_state.get("quote_draft_version", {}).get(r["name"], 0)
+        share_tag = "shared" if share else "private"
+        subj_key = f"quote-subject-{r['name']}-{share_tag}-v{_version}"
+        body_key = f"quote-body-{r['name']}-{share_tag}-v{_version}"
+        # Effective subject: what the subject textbox currently holds
+        # (an edit, saved or not), else the saved draft's subject,
+        # else the generated draft's. The "How we will contact them"
+        # line must match the textbox — it always showed the original
+        # subject even after the draft was edited + saved (live quirk
+        # 2026-11-10 21:32), and a saved draft only becomes visible
+        # in `saved` on the run AFTER the Save click, so reading the
+        # widget's own state is what makes the line update at once.
+        _effective_subject = st.session_state.get(
+            subj_key, saved["subject"] if saved else generated["subject"])
         with st.expander(
                 f"✉️ {r['name']} — "
                 f"{generated['to'] or 'email not held — cannot send'}", expanded=True):
@@ -763,19 +849,11 @@ elif nav == "4 · Buyer Agent":
             st.write(f"**How we will contact them:** Channel: Email · "
                      f"From: {EMAIL_FROM} · "
                      f"To: {generated['to'] or '— not held —'} · "
-                     f"Subject: {generated['subject']}")
+                     f"Subject: {_effective_subject}")
             if not generated["sendable"]:
                 st.warning(f"⚠ {generated['blocked_reason']} "
                            "Add their email to the supplier record first — "
                            "no address is ever guessed.")
-            # Widget keys carry the sharing state: Streamlit keeps a
-            # widget's value by key, so toggling sharing must create a
-            # fresh widget initialised from the regenerated preview —
-            # otherwise the preview would keep showing the old text
-            # (sharing OFF body after toggling ON, and vice versa).
-            share_tag = "shared" if share else "private"
-            subj_key = f"quote-subject-{r['name']}-{share_tag}"
-            body_key = f"quote-body-{r['name']}-{share_tag}"
             subject = st.text_input(
                 "Subject (editable)", value=saved["subject"] if saved else generated["subject"],
                 key=subj_key)
@@ -796,11 +874,30 @@ elif nav == "4 · Buyer Agent":
                 if st.button("💾 Save edited email", key=f"quote-save-{r['name']}"):
                     st.session_state["quote_drafts"][r["name"]] = {
                         "subject": subject, "body": body, "edited": True}
-                    st.success("Saved — this exact text will be sent.")
+                    # Rerun so the "Edited by you" caption and the
+                    # contact line show the saved draft at once — a
+                    # saved draft only becomes visible in `saved` on
+                    # the run AFTER the Save click.
+                    st.rerun()
             with b2:
                 if st.button("↩ Reset to draft", key=f"quote-reset-{r['name']}"):
                     st.session_state["quote_drafts"].pop(r["name"], None)
+                    # Bump the draft version so the subject/body widgets
+                    # are created under BRAND-NEW keys on the next run
+                    # and initialise from the regenerated draft. Popping
+                    # the old widget keys is hygiene only — the version
+                    # bump is what actually restores the text in a real
+                    # browser (see the note at the widget keys above).
+                    _versions = st.session_state.setdefault("quote_draft_version", {})
+                    _new_version = _versions.get(r["name"], 0) + 1
+                    _versions[r["name"]] = _new_version
                     for tag in ("shared", "private"):
+                        for _old in (_new_version - 1,):
+                            st.session_state.pop(
+                                f"quote-subject-{r['name']}-{tag}-v{_old}", None)
+                            st.session_state.pop(
+                                f"quote-body-{r['name']}-{tag}-v{_old}", None)
+                        # Legacy unversioned keys (pre-fix installs).
                         st.session_state.pop(f"quote-subject-{r['name']}-{tag}", None)
                         st.session_state.pop(f"quote-body-{r['name']}-{tag}", None)
                     st.rerun()
@@ -825,7 +922,11 @@ elif nav == "4 · Buyer Agent":
             if sent:
                 st.caption(f"✅ Sent (demo record): to {sent['to']} · "
                            f"subject “{sent['subject']}”")
-    if st.button("Send quote requests to top 3", type="primary"):
+    _send_label = ("Send quote requests to top 3" if len(_sendable) == 3
+                   else f"Send quote request{'s' if len(_sendable) != 1 else ''} "
+                        f"({len(_sendable)} sendable supplier"
+                        f"{'' if len(_sendable) == 1 else 's'})")
+    if st.button(_send_label, type="primary"):
         sent_names, blocked_names = [], []
         for r in top3:
             generated = build_quote_email(
@@ -836,10 +937,11 @@ elif nav == "4 · Buyer Agent":
                 continue
             share_tag = ("shared" if st.session_state["contact_sharing"].get(r["name"], False)
                          else "private")
+            _version = st.session_state.get("quote_draft_version", {}).get(r["name"], 0)
             body = st.session_state.get(
-                f"quote-body-{r['name']}-{share_tag}", generated["body"])
+                f"quote-body-{r['name']}-{share_tag}-v{_version}", generated["body"])
             subject = st.session_state.get(
-                f"quote-subject-{r['name']}-{share_tag}", generated["subject"])
+                f"quote-subject-{r['name']}-{share_tag}-v{_version}", generated["subject"])
             if not st.session_state["contact_sharing"].get(r["name"], False):
                 body = strip_contact_details(body, buyer)
             st.session_state["quote_sent"][r["name"]] = {

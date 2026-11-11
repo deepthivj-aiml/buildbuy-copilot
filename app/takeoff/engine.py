@@ -32,6 +32,12 @@ class TakeoffLine:
     confidence: float  # 0..1
     flagged: bool
     estimate_label: str = ESTIMATE_LABEL
+    # Original plan estimate, captured on the FIRST typed override and
+    # never overwritten by re-applying the same requirement (live bug
+    # 2026-11-10 21:32: a second apply said the plan estimate was the
+    # typed 10 m3, when the plan said 2.4 m3). None = never overridden.
+    plan_quantity: float | None = None
+    plan_unit: str | None = None
 
 
 @dataclass
@@ -214,15 +220,22 @@ def apply_requirement_to_result(
         matched = False
         for line in result.lines:
             if _materials_match(str(item.get("item", "")), line.material):
-                old_qty, old_unit = line.quantity, line.unit
+                # Original plan estimate, captured once on the first
+                # override — re-applying must keep saying the plan
+                # value (13.39 m3), never the typed value (live bug
+                # 2026-11-10 21:32, same as the frontend helper).
+                plan_qty = line.plan_quantity if line.plan_quantity is not None else line.quantity
+                plan_unit = line.plan_unit if line.plan_unit is not None else line.unit
                 line.quantity = new_line.quantity
                 if new_line.unit != "units" or not line.unit:
                     line.unit = new_line.unit
                 line.confidence = 0.90
                 line.flagged = new_line.flagged
+                line.plan_quantity = plan_qty
+                line.plan_unit = plan_unit
                 line.method = (
                     f"user-typed quantity ({new_line.quantity} {line.unit}) — "
-                    f"overrides plan estimate of {old_qty} {old_unit}; plan "
+                    f"overrides plan estimate of {plan_qty} {plan_unit}; plan "
                     f"value kept here, not silently replaced")
                 if new_line.flagged:
                     line.method += " (unit not stated — kept plan unit; confirm)"

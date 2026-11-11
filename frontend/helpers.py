@@ -562,7 +562,10 @@ def apply_requirement_to_takeoff(materials, req):
     - The item matches an existing line -> that line's quantity (and
       unit, when the user stated one) is updated; the method records
       the override AND the old plan value, so the plan estimate is
-      never silently overwritten.
+      never silently overwritten. The original plan value is stored
+      in ``plan_quantity`` / ``plan_unit`` on the FIRST override, so
+      re-applying the same requirement keeps saying 2.4 m3, not the
+      typed 10 m3 (live bug 2026-11-10 21:32).
     - No match -> a new line is appended for the typed item.
     - Every line keeps the "estimate, not a surveyed quantity" label;
       a line whose unit was not stated is flagged for review.
@@ -578,6 +581,14 @@ def apply_requirement_to_takeoff(materials, req):
     display_item = display_item[:1].upper() + display_item[1:]
     for line in lines:
         if _materials_match(item, line.get("material", "")):
+            # The ORIGINAL plan estimate is captured once, on the first
+            # override, and kept in plan_quantity / plan_unit. Re-applying
+            # the same requirement (Parse, then "Find what I need ->",
+            # then a re-render) must NOT overwrite it with the typed
+            # value — the live bug was that the second apply said the
+            # plan estimate was 10 m3 when the plan said 2.4 m3.
+            plan_qty = line.get("plan_quantity", line.get("quantity"))
+            plan_unit = line.get("plan_unit", line.get("unit", ""))
             old_qty, old_unit = line.get("quantity"), line.get("unit", "")
             line["quantity"] = quantity
             if unit:
@@ -585,17 +596,19 @@ def apply_requirement_to_takeoff(materials, req):
             line["confidence"] = 0.90
             line["flagged"] = False
             line["source"] = "typed requirement"
+            line["plan_quantity"] = plan_qty
+            line["plan_unit"] = plan_unit
             line["estimate_label"] = ESTIMATE_LABEL
             line["method"] = (
                 f"user-typed quantity ({quantity} {line['unit']}) — overrides "
-                f"plan estimate of {old_qty} {old_unit}; plan value kept here, "
+                f"plan estimate of {plan_qty} {plan_unit}; plan value kept here, "
                 f"not silently replaced")
             if not unit:
                 line["method"] += " (unit not stated — kept plan unit; confirm)"
                 line["flagged"] = True
             return lines, (f"Takeoff updated from your typed requirement: "
                            f"{line['material']} → {quantity} {line['unit']} "
-                           f"(was plan estimate {old_qty} {old_unit}).")
+                           f"(was plan estimate {plan_qty} {plan_unit}).")
     new_unit = unit or "units"
     lines.append({
         "material": display_item,

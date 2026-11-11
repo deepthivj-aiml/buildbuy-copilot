@@ -522,8 +522,104 @@ Added in this pass:
   AppTest: every tab renders with no exception, its heading present,
   hero + stepper visible, DEMO labelling and the estimate label
   intact).
+- **Correction (2026-11-10 21:32, live test):** the claim above that
+  "every navigation now sticks on the first try" was true only for
+  the RADIO tab switches, which the AppTest exercised — it was NOT
+  true for the navigation BUTTONS ("Find what I need →" etc.), which
+  the AppTest never clicked and which crashed live with
+  `StreamlitWidgetAlreadyInstantiatedError` (see §18). The radio fix
+  and the button fix are different bugs; §18 fixes the buttons.
 
-## 17. Exact next steps for the parent
+## 18. Live crash fix + brown theme (2026-11-10 21:32)
+
+**Live test that found it** (21:32, commit `df622e4` on
+https://tu2tztzegjayuwzxudxbnv.streamlit.app/): restyle works,
+takeoff fix passed (concrete 10 m3), email preview/edit passed,
+steel sample passed — but clicking "Find what I need →" after
+parsing "concrete, 10 m3, Fremont" crashed the app.
+
+- **Crash — root cause:** the button handler assigned
+  `st.session_state["nav"]` AFTER the keyed radio (`key="nav"`) had
+  already been created in the same run. Streamlit forbids assigning
+  a widget's key after instantiation and raises
+  `StreamlitWidgetAlreadyInstantiatedError` (traceback
+  `frontend/app.py` line 384). The app recovered on the next
+  interaction, but the primary Parse → Find flow was broken. The
+  same bug existed in all three navigation buttons (Find what I
+  need →, Find suppliers for these materials →, Contact top 3
+  suppliers →). **Fix:** buttons now set a plain
+  `session_state["pending_nav"]` (not a widget key) and call
+  `st.rerun()`; the next run applies it to `session_state["nav"]`
+  just BEFORE `st.radio(key="nav")` is created, then clears it
+  (`frontend/app.py`: `init_state` + the block above the radio +
+  the three handlers). Verified by a real AppTest that clicks each
+  of the three buttons and lands on the right tab first try, with
+  no exception.
+- **Quirk 1 — plan value overwritten on re-apply:** after the
+  takeoff update the notice said "was plan estimate 10 m3" instead
+  of 2.4 m3. Root cause: `apply_requirement_to_takeoff` (frontend)
+  and `apply_requirement_to_result` (backend) took the "old" value
+  from the line's CURRENT quantity, so the second apply (Parse,
+  then Find) treated the typed 10 as the plan value. **Fix:** the
+  original plan value is captured once, on the first override, in
+  `plan_quantity` / `plan_unit` on the line (frontend dict keys;
+  new optional fields on backend `TakeoffLine`), and the method /
+  note always quote those. Re-applying now still says "plan
+  estimate of 2.4 m3" (frontend) / "13.39 m3" (backend).
+- **Quirk 2 — one email card for concrete: CORRECT, wording fixed.**
+  For concrete x10 only Sierra Building Supply is eligible at all:
+  the other five suppliers are excluded because the quantity is
+  below their MOQ (Bay Steel 25, Golden State 50, Pacific 100,
+  East Bay 50, Delta 200) — no card was dropped. **Fix (wording
+  only):** the Buyer Agent tab now says "Showing 1 email card —
+  only 1 of the 1 ranked suppliers can be emailed…" with the five
+  MOQ exclusions listed, and the bulk-send button reads "Send
+  quote request (1 sendable supplier)" instead of "top 3".
+- **Quirk 3 — "Reset to draft" did not restore the textboxes.**
+  Root cause (two parts): (a) deleting a widget's session-state
+  key alone does NOT reset it in a real browser — the browser
+  re-sends the widget's old value on the next run and the `value=`
+  argument is then ignored (AppTest could not reproduce this: its
+  simulated frontend does not re-send stale values). **Fix:** Reset
+  bumps a per-supplier `quote_draft_version`, so the subject/body
+  widgets are created under brand-new keys (`…-v1`) initialised
+  from the regenerated draft. (b) The "How we will contact them"
+  line always showed the GENERATED subject, even after an edit +
+  Save — and a saved draft only becomes visible in `saved` on the
+  run after the Save click. **Fix:** the line now shows the subject
+  the textbox currently holds (read from the widget's own session
+  state, falling back to the saved / generated subject), and the
+  Save handler calls `st.rerun()` so the "Edited by you" caption
+  appears at once.
+- **Brown theme (user update 2026-11-10 21:32):** UI recoloured
+  from light indigo to warm brown — `.streamlit/config.toml`
+  (primary `#7C4A21`, background `#FBF6EF`, secondary `#F3E8D8`,
+  text `#2E1F14`) + `frontend/theme.py` palette/CSS (deep brown
+  primary, caramel `#A9713F` + amber `#B45309` accents, warm cream
+  page). Hero gradient is now deep brown → brown → amber; primary
+  buttons gradient brown, secondary white with a brown outline,
+  stepper current step brown, metric numbers brown, info chips warm
+  tan. Semantic chip colours (best value green / cheapest blue /
+  highest quality purple) are kept distinct — they carry a category
+  meaning and always keep their text label. No indigo/violet/teal
+  left in the frontend (asserted in `tests/test_theme.py`).
+  Functionality, labels and honesty rules unchanged.
+- **Tests:** +3 in this section (81 total, all passing;
+  `self_test.py` exit 0): `test_find_button_navigates_first_try`
+  (AppTest clicks all three navigation buttons, no exception,
+  lands on the right tab, concrete still 10 m3 with "plan estimate
+  of 2.4 m3" in the method), `test_buyer_agent_email_card_count_is_
+  honest` (concrete x10 → "Showing 1 email card" + MOQ list;
+  steel x50 → 3 cards), `test_reset_to_draft_restores_subject_and_
+  body` (edit + Save → contact line shows the saved subject; edit
+  again + Reset → v1 widgets hold the regenerated draft, saved
+  draft gone); re-apply plan-value assertions in
+  `test_takeoff_updates_from_typed_requirement` (frontend) and
+  `test_takeoff_applies_typed_requirement_on_plan` (backend); brown
+  palette assertions in `tests/test_theme.py`. UAT: +5 checks
+  (2.12, 4.17, 4.18, 8.7, 8.8; 79 total).
+
+## 19. Exact next steps for the parent
 
 1. **Push to the GitHub repo** (repo already exists:
    https://github.com/deepthivj-aiml/buildbuy-copilot, public, empty):

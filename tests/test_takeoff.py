@@ -63,6 +63,16 @@ def test_takeoff_applies_typed_requirement_on_plan():
     assert any(line.material == "Cement" and line.quantity == 20
                for line in result.lines)
     assert not any(line.material == "Rebar" for line in result.lines)
+    # Re-applying the same requirement keeps the ORIGINAL plan value
+    # (13.39 m3) in the method — live bug 2026-11-10 21:32: the second
+    # apply said the plan estimate was the typed 10 m3.
+    apply_requirement_to_result(
+        result, [{"item": "concrete", "quantity": 10, "unit": "m3"}])
+    conc = next(line for line in result.lines if line.material == "concrete")
+    assert conc.quantity == 10
+    assert conc.plan_quantity == 13.39 and conc.plan_unit == "m3"
+    assert "plan estimate of 13.39 m3" in conc.method
+    assert "plan estimate of 10 m3" not in conc.method
 
 
 def test_run_takeoff_merges_plan_and_typed_items():

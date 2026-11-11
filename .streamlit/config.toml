@@ -1,10 +1,10 @@
-# BuildBuy Copilot — Streamlit theme (light, indigo primary).
+# BuildBuy Copilot — Streamlit theme (warm brown).
 # Read by Streamlit Community Cloud from the repo root on deploy.
 # The in-app custom CSS in frontend/theme.py builds on this palette;
-# keep the two in sync (primary #4F46E5, text #1F2937, page #F8F7FF).
+# keep the two in sync (primary #7C4A21, text #2E1F14, page #FBF6EF).
 [theme]
-primaryColor = "#4F46E5"
-backgroundColor = "#F8F7FF"
-secondaryBackgroundColor = "#EEF2FF"
-textColor = "#1F2937"
+primaryColor = "#7C4A21"
+backgroundColor = "#FBF6EF"
+secondaryBackgroundColor = "#F3E8D8"
+textColor = "#2E1F14"
 font = "sans serif"

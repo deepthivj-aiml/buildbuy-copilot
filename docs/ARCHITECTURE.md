@@ -390,13 +390,13 @@ eval_runs(id, eval_set, groundedness DECIMAL, retrieval_top1 DECIMAL,
 7. **Settings** — contact, sharing defaults, free-tier usage, BYO key status
    (never the key value), data export/delete.
 
-**Theme (2026-11-11 restyle):** light indigo theme — `.streamlit/
-config.toml` (`primaryColor #4F46E5`, background `#F8F7FF`, text
-`#1F2937`) plus custom CSS in `frontend/theme.py` (pure helpers, no
-Streamlit import): gradient hero banner on every tab (mode pill says
-DEMO or LIVE as text), a 9-step buyer-journey stepper (Requirement →
-Materials → Suppliers → Twin → Buyer agent → Approval → Order →
-Delivery → Invoice; done/current/to-do states), colour-coded status
+**Theme (2026-11-11 restyle, recoloured warm brown 2026-11-10 21:32):**
+warm brown theme — `.streamlit/config.toml` (`primaryColor #7C4A21`,
+background `#FBF6EF`, text `#2E1F14`) plus custom CSS in
+`frontend/theme.py` (pure helpers, no Streamlit import): gradient hero
+banner on every tab (mode pill says DEMO or LIVE as text), a 9-step
+buyer-journey stepper (Requirement → Materials → Suppliers → Twin →
+Buyer agent → Approval → Order → Delivery → Invoice; done/current/to-do states), colour-coded status
 chips (best value green / cheapest blue / highest quality purple /
 order and thread statuses), card-style supplier cards with coloured
 badges, gradient primary buttons, pill-style tab navigation. Colour

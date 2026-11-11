@@ -35,6 +35,7 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 | 2.9 | Type `concrete, 10 m3, Fremont` → Parse → Plan & Materials | Takeoff shows Concrete (footings) **10 m3** (not the demo plan's 2.4 m3); the method keeps the old plan value ("overrides plan estimate of 2.4 m3") |
 | 2.10 | Type a requirement with no quantity (`timber joists`) → Parse | Takeoff is unchanged; no quantity is invented; a plain-language note says so |
 | 2.11 | Load the sample plan after typing a quantity | The typed quantity is still applied to the plan takeoff — the plan load never silently discards it |
+| 2.12 | Re-apply the same requirement (Parse, then "Find what I need →") | The takeoff still says concrete 10 m3 AND the method still says "plan estimate of 2.4 m3" — the plan value is never overwritten by the typed value on a second apply; "Find what I need →" navigates to Plan & Materials on the first tap, no crash |
 
 ## 3. Suppliers & Twin — cost AND quality
 
@@ -72,6 +73,8 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 | 4.14 | Sharing toggle changes the preview | Toggling "Share my contact" ON for one supplier puts your name/email/phone in that supplier's preview only; OFF shows "a customer" |
 | 4.15 | Supplier with no email held | The card says "Email not held" and its Send button is disabled; "Send to top 3" lists it as blocked — no address is ever guessed |
 | 4.16 | Send uses the edited text, sharing OFF strips contact | An edited body is what gets sent; with sharing OFF, any name/email/phone typed into the edited draft is removed before sending |
+| 4.17 | Email-card count is honest for a small quantity | For `concrete, 10 m3` only ONE email card renders (Sierra) — and the tab says so: "Showing 1 email card" + the other 5 suppliers listed as MOQ-excluded with their MOQs; the bulk-send button reads "Send quote request (1 sendable supplier)", not "top 3" |
+| 4.18 | Reset to draft really restores the text | Edit the subject/body, tap "Reset to draft" — both textboxes come back as the regenerated draft (subject "Quote request — …"); the "How we will contact them" line always shows the subject the textbox currently holds, including a saved edit |
 
 ## 5. My Orders — timeline, chase, invoice
 
@@ -119,15 +122,17 @@ a real result.
 
 | # | Check | Pass means |
 |---|---|---|
-| 8.1 | Hero banner + theme | Gradient hero (indigo → violet → teal) on every tab with the app name, tagline and a DEMO/LIVE pill that matches the actual mode; light indigo theme throughout |
+| 8.1 | Hero banner + theme | Gradient hero (deep brown → brown → amber) on every tab with the app name, tagline and a DEMO/LIVE pill that matches the actual mode; warm brown theme throughout (primary `#7C4A21`, background `#FBF6EF`, text `#2E1F14`) |
 | 8.2 | Buyer-journey stepper | 9 steps (Requirement → Materials → Suppliers → Twin → Buyer agent → Approval → Order → Delivery → Invoice) with done / current / to-do states; the current step matches where you are |
 | 8.3 | Status chips | Best value (green) / cheapest (blue) / highest quality (purple) on supplier cards; order and inbox thread statuses shown as chips WITH their text labels (never colour-only) |
-| 8.4 | Buttons | Primary actions are gradient indigo; secondary actions are white with an indigo outline; hover lift on cards and buttons |
+| 8.4 | Buttons | Primary actions are gradient brown (deep brown → caramel); secondary actions are white with a brown outline; hover lift on cards and buttons |
 | 8.5 | Tab navigation | Tapping any of the 7 tabs switches to it on the first tap, every time (no dropped tab switch) |
 | 8.6 | Honest labels survive the restyle | "estimate, not a surveyed quantity" on every takeoff line, "no data yet" on empty Accuracy metrics, DEMO MODE badge in demo mode — all still present |
+| 8.7 | Navigation buttons | "Find what I need →" (Start → Plan & Materials), "Find suppliers for these materials →" (→ Suppliers & Twin), "Contact top 3 suppliers →" (→ Buyer Agent) each navigate on the first tap with no error |
+| 8.8 | Brown theme, readable | Dark brown text on warm cream backgrounds throughout; chips keep their text labels; no indigo/violet/teal left in the UI |
 
 ## 9. Results log
 
 | Date | Device | Tester | Items passed / total | Failures (issue #) |
 |---|---|---|---|---|
-| _yyyy-mm-dd_ | _phone model / desktop_ | | _/ 74_ | |
+| _yyyy-mm-dd_ | _phone model / desktop_ | | _/ 79_ | |
