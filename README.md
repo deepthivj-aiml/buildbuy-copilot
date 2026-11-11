@@ -1,15 +1,18 @@
 # BuildBuy Copilot
 
-**One site, one buyer workflow.** Upload a construction plan — or just say
-what you need — and BuildBuy Copilot reads the plan, estimates the
-materials, finds nearby suppliers, simulates the purchase, messages
-suppliers for quotes, negotiates within your limits, and brings you one
-deal to approve. Nothing is ordered or paid without your tap.
+I built this because buying materials takes too long — too many phone
+calls, too many quotes to chase, and too much guessing at quantities.
+
+Upload a construction plan, or just tell me what you need, and this app
+reads the plan, estimates the materials, finds nearby suppliers, and
+brings you one deal to approve. Nothing is ordered or paid without
+your tap. I use it for one job at a time — I type what I need, I check
+the numbers myself, and I decide.
 
 - **Live app:** https://tu2tztzegjayuwzxudxbnv.streamlit.app/
 - **GitHub:** https://github.com/deepthivj-aiml/buildbuy-copilot
   (branch `master`, main file `frontend/app.py`, Python 3.12)
-- **Status:** live on Streamlit Community Cloud, verified with sample
+- **Status:** live on Streamlit Community Cloud, checked with sample
   inputs 2026-11-10 (7 tabs load; see [Deploy](#7-deploy) and
   [`docs/DEPLOY.md`](docs/DEPLOY.md) §4 for the smoke test).
   The app runs in **Demo Mode** (synthetic data, no real email) until
@@ -29,7 +32,9 @@ deal to approve. Nothing is ordered or paid without your tap.
 **For:** freelance site engineers, solo architects, 1–3-person
 contractors, small shop owners — anyone who needs materials for one
 job this week, has no buying team, and cannot afford a late delivery
-or a wrong quantity.
+or a wrong quantity. I started with construction plans, but it works
+for any material you type in — steel, concrete, timber, fasteners,
+electronics, packaging, anything.
 
 ---
 
@@ -97,7 +102,7 @@ runs in clearly-labelled **Demo Mode** on synthetic data.
 
 ```bash
 docker compose up -d --build
-docker compose ps          # api, frontend, db, redis all Up / healthy
+docker compose ps          # api, frontend, redis Up; db starts but is not used by the live flow
 docker compose logs -f api # Ctrl+C stops following, not the containers
 docker compose down        # stops, keeps data
 docker compose down -v     # stops AND wipes local data — only when you mean it
@@ -367,9 +372,8 @@ python tests/self_test.py              # measured end-to-end summary, exit 0
 **101 passed, 0 failed, 0 skipped** (2026-11-10, live-data-only
 refactor: 86 before + 15 new in `tests/test_live.py` + the updated
 approval-flow send test). Tests use the mock email backend and **no
-database** — no real email, no network, no invented data. CI
-(`.github/workflows/ci.yml`) runs pytest on every push/PR with
-Python 3.12.
+database** — no real email, no network, no invented data. I run
+`pytest` locally before pushing; there is no CI running on GitHub yet.
 
 Per-module test commands are in [`docs/MODULES.md`](docs/MODULES.md);
 measured results per file are in
@@ -386,11 +390,6 @@ https://tu2tztzegjayuwzxudxbnv.streamlit.app/
 fails on `psycopg-binary` / pandas). A push to `master` auto-redeploys;
 if the first redeploy crashes on a stale pull, reboot the app from
 Manage app for a fresh clone.
-
-**Hugging Face: skipped.** The account exists
-(https://huggingface.co/deepthivj-aiml) but a free Streamlit / Docker
-Space needs PRO ($9/month), and the user chose Streamlit only — do
-not pay for PRO or create a Space without a new explicit instruction.
 
 Free-tier limits: Streamlit sleeps after inactivity; Gmail has daily
 sending limits. The app has no storage by design — if you close the
@@ -411,7 +410,7 @@ test: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ---
 
-## 8. Honest limits
+## 8. Limits
 
 - **Live data only, no storage.** Nothing is saved: no requirement,
   shortlist, order or metric is written to a database. Close the tab
@@ -441,5 +440,5 @@ test: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 | [`docs/MODULES.md`](docs/MODULES.md) | Module map: every module's files, public interface, rebuild/test alone |
 | [`docs/BUILD_REPORT.md`](docs/BUILD_REPORT.md) | Integration + test pass report (measured counts, wiring, smoke tests) |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Free deploy ($0), smoke test |
-| [`docs/UAT.md`](docs/UAT.md) | Manual UAT checklist (74 items, phone-first) |
+| [`docs/UAT.md`](docs/UAT.md) | Manual UAT checklist (84 items, phone-first) |
 | [`docs/FREE_MODELS.md`](docs/FREE_MODELS.md) | Free/local models used by default and BYO paid options |
