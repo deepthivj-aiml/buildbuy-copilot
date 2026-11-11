@@ -61,3 +61,46 @@ def test_hero_labels_mode_honestly():
     assert "DEMO MODE" in demo and "LIVE MODE" not in demo
     live = theme.hero_html("live")
     assert "LIVE MODE" in live and "DEMO MODE" not in live
+
+
+def test_palette_contrast_passes_wcag_aa():
+    """Professional polish (2026-11-10 22:13): the brown palette must
+    stay readable — WCAG AA (≥ 4.5:1) for normal text, on the page
+    background and on white. Colour is never the only signal, and
+    low-contrast text is a bug."""
+    assert theme.contrast_ratio("#000000", "#FFFFFF") == 21.0
+    assert theme.contrast_ratio("#7C4A21", "#7C4A21") == 1.0
+    # Primary text/buttons on white, ink + muted on the cream page.
+    assert theme.contrast_ratio(theme.PALETTE["primary"], "#FFFFFF") >= 4.5
+    assert theme.contrast_ratio(theme.PALETTE["ink"], theme.PALETTE["page_bg"]) >= 7.0
+    assert theme.contrast_ratio(theme.PALETTE["muted"], theme.PALETTE["page_bg"]) >= 4.5
+    # White hero text on the dark-brown hero end.
+    assert theme.contrast_ratio("#FFFFFF", theme.PALETTE["primary_dark"]) >= 4.5
+    # Status chips: text on its own chip background, every kind.
+    chip_pairs = [
+        ("#14532D", "#DCFCE7"), ("#1E3A8A", "#DBEAFE"),
+        ("#581C87", "#F3E8FF"), ("#78350F", "#FEF3C7"),
+        ("#134E4A", "#CCFBF1"), ("#7F1D1D", "#FEE2E2"),
+        ("#4B5563", "#F3F4F6"), ("#5C3413", "#F3E8D8"),
+    ]
+    for fg, bg in chip_pairs:
+        assert theme.contrast_ratio(fg, bg) >= 4.5, (fg, bg)
+
+
+def test_professional_design_system_is_consistent():
+    """One typography scale, one card, one hero size — no ad-hoc
+    sizes or borders left over from earlier restyles."""
+    css = theme.THEME_CSS
+    # Compact professional hero (not the old oversized 26px/2rem one).
+    assert "padding: 20px 24px" in css
+    assert "font-size: 1.55rem" in css
+    # One card design: warm border, white background.
+    assert ".card { border: 1px solid #E5DCCB" in css
+    assert ".metric-card { border: 1px solid #E5DCCB" in css
+    assert "background: #ffffff" in css and "#fafafa" not in css
+    # Helper/caption text is the muted palette colour everywhere.
+    assert 'div[data-testid="stCaption"] { color: #6B5D4F; }' in css
+    assert ".trust { color: #6B5D4F" in css
+    # Typography scale: H1 1.6rem/600, H2 1.2rem/600 with a 3px rule.
+    assert "h1 { font-size: 1.6rem; font-weight: 600" in css
+    assert "border-left: 3px solid #7C4A21" in css

@@ -93,7 +93,7 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 |---|---|---|
 | 6.1 | 8-metric table | All 8 metrics shown separately — Groundedness, Retrieval accuracy, Answer accuracy, Takeoff estimate accuracy, Supplier ranking accuracy, Buyer-agent accuracy, Guardrail block rate, Cost / cache / speed — each with formula, source, n=, target, status. No single blended accuracy score anywhere |
 | 6.2 | 4 headline cards | Groundedness / thumbs-up rate / takeoff mean error / cost per job, each with "n = …" — the same 4 metrics as the table, not a different score |
-| 6.3 | 2 trend charts | Accuracy over time + cost/latency over time render from the metrics, with alert thresholds as **dashed lines** (groundedness 90%, retrieval top-1 85%, eval pass 90%, p95 latency 10 s) |
+| 6.3 | 2 trend charts | Accuracy over time + cost/latency over time render from the metrics, with alert thresholds as **dashed lines** (groundedness 90%, retrieval top-1 85%, eval pass 90%, p95 latency 10 s); dates on a real date axis in chronological order (Oct 28 → Nov 10), and a day with no eval run shows as a gap — never 0% |
 | 6.4 | Per-module table | One row per module with its metric, value and n= — no worst-in-7-days column (evaluations are internal-only) |
 | 6.5 | Empty state | With metrics cleared, the tab says "No data yet" — never a made-up percentage |
 | 6.6 | Live vs demo | With the backend up, the tab shows a LIVE badge and measured values; with no backend, it says the data is synthetic demo data |
@@ -125,6 +125,10 @@ a real result.
 | 8.6 | Honest labels survive the restyle | "estimate, not a surveyed quantity" on every takeoff line, "no data yet" on empty Accuracy metrics, DEMO MODE badge in demo mode — all still present |
 | 8.7 | Navigation buttons | "Find what I need →" (Start → Plan & Materials), "Find suppliers for these materials →" (→ Suppliers & Twin), "Contact top 3 suppliers →" (→ Buyer Agent) each navigate on the first tap with no error |
 | 8.8 | Brown theme, readable | Dark brown text on warm cream backgrounds throughout; chips keep their text labels; no indigo/violet/teal left in the UI |
+| 8.9 | Stepper matches the tab (professional polish 2026-11-11) | On each of the 7 tabs, the journey stepper's current step is that tab's step (Start → Requirement, Plan & Materials → Materials, Suppliers & Twin → Twin, Buyer Agent → Buyer agent, My Orders → Order) — never one step behind |
+| 8.10 | Trend chart dates + missing day (professional polish 2026-11-11) | Trend day labels run in chronological order (Oct 28 → Nov 10, never "Nov 1, Nov 10, Nov 2"); a day with no eval run (Oct 31) shows as a gap in the Eval pass % line, never a drop to 0% |
+| 8.11 | Email-card count is unambiguous (professional polish 2026-11-11) | Buyer Agent banner states how many email cards are shown, how many suppliers can be emailed, and how many were considered in total (e.g. concrete ×10: "1 supplier can be emailed … 6 suppliers were considered in total") — no "1 of the 1 ranked" wording |
+| 8.12 | One primary per section (professional polish 2026-11-11) | Each section has a single primary action (gradient brown); scale-confirm and per-supplier "Send to …" are secondary; currency in tables is right-aligned and "$"-formatted |
 
 ## 9. Results log
 

@@ -134,7 +134,11 @@ DEMO_METRICS_DAYS = ["Oct 28", "Oct 29", "Oct 30", "Oct 31", "Nov 1", "Nov 2", "
                      "Nov 4", "Nov 5", "Nov 6", "Nov 7", "Nov 8", "Nov 9", "Nov 10"]
 DEMO_GROUNDEDNESS = [92, 93, 91, 94, 94, 95, 95, 96, 95, 96, 96, 97, 96, 96]
 DEMO_RETRIEVAL_TOP1 = [86, 87, 88, 87, 89, 89, 90, 90, 91, 90, 91, 92, 91, 92]
-DEMO_EVAL_PASS = [100, 100, 100, 0, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100]
+DEMO_EVAL_PASS = [100, 100, 100, None, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100]
+# Oct 31 is None, not 0: no eval run happened that day in the demo, so
+# the trend chart shows a GAP there. A 0% would claim a run failed
+# entirely — and that is what the live chart wrongly showed
+# (2026-11-10: Eval pass % dropped to 0% on Oct 31).
 DEMO_COST_PER_JOB = [0.61, 0.58, 0.55, 0.52, 0.51, 0.49, 0.48, 0.46, 0.45, 0.44, 0.43, 0.43, 0.42, 0.42]
 DEMO_LATENCY_P95 = [9.8, 9.4, 9.1, 8.9, 8.7, 8.4, 8.2, 8.0, 7.9, 7.7, 7.6, 7.4, 7.3, 7.2]
 

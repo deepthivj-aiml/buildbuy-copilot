@@ -390,6 +390,46 @@ def test_accuracy_demo_dashboard_is_complete_and_honest():
     assert len(rows) == 14 and rows[0]["Groundedness %"] == 92.0
 
 
+def test_trend_rows_sorted_chronologically_and_missing_day_is_a_gap():
+    """Professional polish (2026-11-10 22:13): the live trend chart
+    showed day labels out of order (nominal axis: "Nov 1", "Nov 10",
+    "Nov 2" …) and Eval pass % dropped to 0% on Oct 31. Root causes:
+    (a) the chart used a nominal "Day" axis, which sorts
+    alphabetically; (b) the demo series literally contained 0 for
+    Oct 31, a day with NO eval run. trend_rows now sorts by real
+    date and a missing day stays None — a gap, never 0%."""
+    import accuracy
+
+    import pytest
+
+    assert accuracy.parse_day_label("Oct 28") == date(2026, 10, 28)
+    assert accuracy.parse_day_label("2026-11-10") == date(2026, 11, 10)
+    with pytest.raises(ValueError):
+        accuracy.parse_day_label("garbage")
+    # Shuffled input comes back in chronological order.
+    rows = accuracy.trend_rows(
+        ["Nov 2", "Oct 28", "Oct 31"],
+        [95, 92, 94], [90, 86, 87], [100, 100, None])
+    assert [r["Day"] for r in rows] == ["Oct 28", "Oct 31", "Nov 2"]
+    assert [r["Date"] for r in rows] == ["2026-10-28", "2026-10-31", "2026-11-02"]
+    # The missing day is None in every series — a chart gap, not 0%.
+    assert rows[1]["Eval pass %"] is None
+    assert rows[0]["Eval pass %"] == 100.0
+    # The demo series itself: Oct 31 has no eval run (None, not 0).
+    assert demo_data.DEMO_EVAL_PASS[3] is None
+    demo_rows = accuracy.trend_rows(
+        demo_data.DEMO_METRICS_DAYS, demo_data.DEMO_GROUNDEDNESS,
+        demo_data.DEMO_RETRIEVAL_TOP1, demo_data.DEMO_EVAL_PASS)
+    assert demo_rows[0]["Day"] == "Oct 28"
+    assert demo_rows[-1]["Day"] == "Nov 10"
+    oct31 = next(r for r in demo_rows if r["Day"] == "Oct 31")
+    assert oct31["Eval pass %"] is None
+    assert oct31["Groundedness %"] == 94.0  # other series still have data
+    # cost_rows sorts the same way.
+    crows = accuracy.cost_rows(["Nov 2", "Oct 28"], [0.5, 0.6], [8.0, 9.0])
+    assert [r["Day"] for r in crows] == ["Oct 28", "Nov 2"]
+
+
 def test_accuracy_fetch_live_returns_none_when_backend_down():
     import accuracy
 
@@ -637,6 +677,64 @@ def test_buyer_agent_email_card_count_is_honest():
     at2.radio[0].set_value("4 · Buyer Agent").run()
     assert not at2.exception, at2.exception
     assert "Showing 3 email cards" in _all_text(at2)
+
+
+def test_stepper_matches_selected_tab():
+    """Professional polish (2026-11-10 22:13): the journey stepper
+    lagged one step behind the selected tab — it was rendered BEFORE
+    the nav radio was created, so it read the PREVIOUS run's tab.
+    It is now rendered after the radio, and the current step must
+    match the tab just selected, on every tab."""
+    at = _app()
+    expected_current = {
+        "1 · Start": "1. Requirement — current",
+        "2 · Plan & Materials": "2. Materials — current",
+        "3 · Suppliers & Twin": "4. Twin — current",
+        "4 · Buyer Agent": "5. Buyer agent — current",
+        "5 · My Orders": "7. Order — current",
+        "6 · Accuracy": "5. Buyer agent — current",
+        "7 · Settings": "1. Requirement — current",
+    }
+    for nav_value, current in expected_current.items():
+        at.radio[0].set_value(nav_value).run()
+        assert not at.exception, (nav_value, at.exception)
+        stepper_html = " ".join(str(m.value) for m in at.markdown)
+        assert current in stepper_html, (nav_value, current)
+        assert stepper_html.count("jstep current") == 1, nav_value
+
+
+def test_email_card_count_wording_is_unambiguous():
+    """Professional polish (2026-11-10 22:13): the old banner said
+    "only 1 of the 1 ranked suppliers" while naming 5 MOQ-excluded
+    suppliers — the reader could not tell whether cards were dropped.
+    The banner must now say plainly how many cards are shown, how
+    many suppliers can be emailed, and how many were considered in
+    total."""
+    at = _app()
+    at.session_state["requirement"] = {
+        "raw": "concrete, 10 m3, Fremont", "item": "concrete",
+        "quantity": 10, "unit": "m3", "location": "Fremont",
+        "deadline": "", "budget": None}
+    at.radio[0].set_value("4 · Buyer Agent").run()
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "Showing 1 email card" in text
+    assert "1 supplier can be emailed" in text
+    assert "6 suppliers were considered in total" in text
+    assert "of the 1 ranked" not in text
+    assert "Bay Steel Supply (MOQ 25)" in text
+    # Steel x50: 3 sendable of 5 considered (Pacific + Delta excluded).
+    at2 = _app()
+    at2.session_state["requirement"] = {
+        "raw": "steel brackets, 50 units", "item": "steel brackets",
+        "quantity": 50, "unit": "pcs", "location": "Fremont",
+        "deadline": "Friday", "budget": 400.0}
+    at2.radio[0].set_value("4 · Buyer Agent").run()
+    assert not at2.exception, at2.exception
+    text2 = _all_text(at2)
+    assert "Showing 3 email cards" in text2
+    assert "3 suppliers can be emailed" in text2
+    assert "5 suppliers were considered in total" in text2
 
 
 def test_reset_to_draft_restores_subject_and_body():

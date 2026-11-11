@@ -36,13 +36,31 @@ PALETTE = {
     "card_border": "#E5DCCB",
 }
 
+# Professional design system (2026-11-10 22:13 polish) — one scale,
+# one card, one button hierarchy, applied on every tab:
+# - Typography: H1 1.6rem/600, H2 1.2rem/600 with a 3px brown rule,
+#   H3 1.05rem/600, body 1rem, captions/helper text 0.85rem muted.
+# - Cards: white, 1px #E5DCCB border, 12px radius, 14px/16px padding,
+#   one soft shadow, 2px lift on hover — the same card everywhere.
+# - Buttons: ONE primary action per section (gradient brown), the
+#   rest secondary (white, brown outline) or ghost. Primary buttons
+#   are the tab's decisive action; everything else is secondary.
+# - Tables: currency right-aligned and formatted "$%.2f" via
+#   column_config at the call site; numbers never left-aligned
+#   against text. Status is always a text label + colour, never
+#   colour alone. Contrast: primary/ink/muted all pass WCAG AA
+#   (≥ 4.5:1) on the page background — enforced by
+#   tests/test_theme.py::test_palette_contrast_passes_wcag_aa.
 THEME_CSS = """
 <style>
 .block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 1120px; }
-h1 { font-size: 1.7rem; }
-h2 { font-size: 1.25rem; margin-top: 1.2rem; border-left: 4px solid #7C4A21;
-     padding-left: 10px; }
-h3 { font-size: 1.05rem; }
+h1 { font-size: 1.6rem; font-weight: 600; line-height: 1.25; }
+h2 { font-size: 1.2rem; font-weight: 600; line-height: 1.3; margin-top: 1.2rem;
+     border-left: 3px solid #7C4A21; padding-left: 10px; }
+h3 { font-size: 1.05rem; font-weight: 600; line-height: 1.3; }
+p, li { line-height: 1.5; }
+div[data-testid="stCaption"] { color: #6B5D4F; }
+div[data-testid="stDataFrame"] { border-radius: 12px; }
 .stButton>button { min-height: 44px; font-size: 1rem; border-radius: 10px;
                    transition: transform .12s ease, box-shadow .12s ease; }
 .stButton>button:hover { transform: translateY(-1px);
@@ -60,18 +78,20 @@ div[data-testid="stRadio"] label:has(input:checked) {
     background: #7C4A21; color: #ffffff; border-radius: 999px; padding: 4px 12px; }
 div[data-testid="stRadio"] label { border-radius: 999px; padding: 4px 10px;
                                   font-weight: 600; }
-/* Hero banner (Start tab) — warm brown gradient */
+/* Hero banner (Start tab) — warm brown gradient, compact and
+   professional: one line of tagline, pills on one row. */
 .hero { background: linear-gradient(135deg, #5C3413 0%, #7C4A21 55%, #B45309 100%);
-        color: #ffffff; border-radius: 18px; padding: 26px 28px;
-        margin: 6px 0 14px 0; box-shadow: 0 8px 24px rgba(124,74,33,.30); }
-.hero h1 { color: #ffffff; font-size: 2rem; margin: 0 0 6px 0; }
-.hero p { color: #F5E6D3; font-size: 1.05rem; margin: 0 0 12px 0; }
+        color: #ffffff; border-radius: 16px; padding: 20px 24px;
+        margin: 6px 0 14px 0; box-shadow: 0 6px 18px rgba(124,74,33,.25); }
+.hero h1 { color: #ffffff; font-size: 1.55rem; margin: 0 0 4px 0; }
+.hero p { color: #F5E6D3; font-size: 0.95rem; margin: 0 0 10px 0; }
 .hero .hero-pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .hero .hero-pill { background: rgba(255,255,255,.18); color: #ffffff;
                    border: 1px solid rgba(255,255,255,.35); border-radius: 999px;
                    padding: 3px 12px; font-size: .85rem; font-weight: 600; }
-/* Cards */
-.card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 14px 16px;
+/* Cards — one card design everywhere: white, 1px warm border,
+   12px radius, 14px/16px padding, one soft shadow. */
+.card { border: 1px solid #E5DCCB; border-radius: 12px; padding: 14px 16px;
         margin: 8px 0; background: #ffffff;
         box-shadow: 0 2px 8px rgba(31,41,55,.06);
         transition: transform .12s ease, box-shadow .12s ease; }
@@ -102,11 +122,11 @@ div[data-testid="stRadio"] label { border-radius: 999px; padding: 4px 10px;
 .badge-live { background: #d1e7dd; color: #0f5132; }
 .badge-warn { background: #f8d7da; color: #842029; }
 .badge-ok { background: #d1e7dd; color: #0f5132; }
-.trust { color: #555; font-size: 0.9rem; }
-.small { font-size: 0.85rem; color: #555; }
-.evidence { font-size: 0.85rem; color: #444; }
-.metric-card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 12px;
-               text-align: center; background: #fafafa;
+.trust { color: #6B5D4F; font-size: 0.9rem; }
+.small { font-size: 0.85rem; color: #6B5D4F; }
+.evidence { font-size: 0.85rem; color: #6B5D4F; }
+.metric-card { border: 1px solid #E5DCCB; border-radius: 12px; padding: 12px;
+               text-align: center; background: #ffffff;
                border-top: 4px solid #7C4A21;
                box-shadow: 0 2px 8px rgba(31,41,55,.06);
                transition: transform .12s ease; }
@@ -162,6 +182,23 @@ THREAD_CHIP_LABEL = {
     "replied": "replied", "sent": "sent", "no reply": "no reply",
     "agreed": "agreed", "needs_customer": "needs you",
 }
+
+
+def _luminance(hex_color):
+    """Relative luminance of a #RRGGBB colour (WCAG 2.1)."""
+    rgb = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+           for c in rgb]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast_ratio(fg, bg):
+    """WCAG contrast ratio between two #RRGGBB colours. ≥ 4.5:1 is
+    AA for normal text; ≥ 7:1 is AAA. Used by the theme tests to
+    keep the brown palette readable — colour is never the only
+    signal, and low-contrast text is a bug."""
+    light, dark = sorted((_luminance(fg), _luminance(bg)), reverse=True)
+    return round((light + 0.05) / (dark + 0.05), 2)
 
 
 def status_chip(label, kind="info"):

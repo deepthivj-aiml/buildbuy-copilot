@@ -391,23 +391,35 @@ eval_runs(id, eval_set, groundedness DECIMAL, retrieval_top1 DECIMAL,
 7. **Settings** — contact, sharing defaults, free-tier usage, BYO key status
    (never the key value), data export/delete.
 
-**Theme (2026-11-11 restyle, recoloured warm brown 2026-11-10 21:32):**
-warm brown theme — `.streamlit/config.toml` (`primaryColor #7C4A21`,
-background `#FBF6EF`, text `#2E1F14`) plus custom CSS in
-`frontend/theme.py` (pure helpers, no Streamlit import): gradient hero
-banner on every tab (mode pill says DEMO or LIVE as text), a 9-step
-buyer-journey stepper (Requirement → Materials → Suppliers → Twin →
-Buyer agent → Approval → Order → Delivery → Invoice; done/current/to-do states), colour-coded status
-chips (best value green / cheapest blue / highest quality purple /
+**Theme (2026-11-11 restyle, recoloured warm brown 2026-11-10 21:32,
+professional polish 2026-11-11):** warm brown theme —
+`.streamlit/config.toml` (`primaryColor #7C4A21`, background `#FBF6EF`,
+text `#2E1F14`) plus a documented design system in `frontend/theme.py`
+(pure helpers, no Streamlit import): one typography scale (H1 1.6rem/600,
+H2 1.2rem/600 with a 3px brown rule, captions 0.85rem muted), one card
+design (white, 1px warm border, 12px radius), one primary action per
+section (gradient brown; the rest secondary), tables with right-aligned
+`$`-formatted currency, compact gradient hero banner on every tab (mode
+pill says DEMO or LIVE as text), a 9-step buyer-journey stepper
+(Requirement → Materials → Suppliers → Twin → Buyer agent → Approval →
+Order → Delivery → Invoice; done/current/to-do states), colour-coded
+status chips (best value green / cheapest blue / highest quality purple /
 order and thread statuses), card-style supplier cards with coloured
-badges, gradient primary buttons, pill-style tab navigation. Colour
-is decoration only — every chip and step keeps its text label (never
-colour-only meaning), demo/synthetic data keeps its amber DEMO badge,
-and no colour implies a real result. The tab navigation is a keyed
-radio (`key="nav"`): the old `index=NAV.index(session_state["nav"])`
-pattern silently dropped every second tab click when the index default
-changed between runs (found by AppTest); a keyed widget has no moving
-default to reset to.
+badges, pill-style tab navigation. Colour is decoration only — every
+chip and step keeps its text label (never colour-only meaning),
+demo/synthetic data keeps its amber DEMO badge, and no colour implies
+a real result. Text contrast passes WCAG AA (≥ 4.5:1, enforced by
+`tests/test_theme.py::test_palette_contrast_passes_wcag_aa`). The tab
+navigation is a keyed radio (`key="nav"`): the old
+`index=NAV.index(session_state["nav"])` pattern silently dropped every
+second tab click when the index default changed between runs (found by
+AppTest); a keyed widget has no moving default to reset to. The stepper
+renders AFTER the radio is created and takes the radio value as its
+argument — rendering it before the radio read the previous run's tab
+and lagged one step behind (fixed 2026-11-11). Trend charts use a real
+date axis (`Date:T`, "%b %d") with rows sorted chronologically
+(`frontend/accuracy.py::parse_day_label`, `trend_rows`, `cost_rows`);
+a day with no eval run is None and renders as a gap, never 0%.
 
 Without a backend the frontend runs in clearly-labelled **DEMO MODE** on
 synthetic in-memory data — no paid key, no real email. With the backend up

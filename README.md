@@ -292,17 +292,24 @@ the others. Map + per-module commands:
 
 ## 5. Look and feel
 
-Light indigo theme (`.streamlit/config.toml`: primary `#4F46E5`,
-background `#F8F7FF`, text `#1F2937`) with custom CSS in
-`frontend/theme.py`: gradient hero banner (indigo → violet → teal) on
-every tab, a 9-step buyer-journey stepper (Requirement → Materials →
-Suppliers → Twin → Buyer agent → Approval → Order → Delivery →
-Invoice), colour-coded status chips (best value green, cheapest blue,
-highest quality purple, order/thread/metric statuses), card-style
-supplier cards, gradient primary buttons and pill-style tab
-navigation. Colour is decoration only — every chip and step keeps its
-text label, demo data keeps its amber DEMO badge, and no colour implies
-a real result. All 7 tabs are render-checked with Streamlit AppTest
+Professional warm-brown theme (`.streamlit/config.toml`: primary
+`#7C4A21`, background `#FBF6EF` cream, text `#2E1F14`), with a
+documented design system in `frontend/theme.py`: one typography scale
+(H1 1.6rem/600, H2 1.2rem/600 with a 3px brown rule, captions 0.85rem
+muted), one card design (white, 1px warm border, 12px radius,
+14px/16px padding), one primary action per section (gradient brown;
+everything else secondary), colour-coded status chips, and tables with
+right-aligned, `$`-formatted currency. The compact gradient hero
+(brown → bronze → amber) sits on every tab, with a 9-step
+buyer-journey stepper (Requirement → Materials → Suppliers → Twin →
+Buyer agent → Approval → Order → Delivery → Invoice) whose current
+step always matches the selected tab. Colour is decoration only —
+every chip and step keeps its text label, demo data keeps its amber
+DEMO badge, and no colour implies a real result. Text contrast passes
+WCAG AA (≥ 4.5:1, checked in `tests/test_theme.py`). Trend charts use
+a real date axis (chronological, Oct 28 → Nov 10) and a missing day
+shows as a gap, never 0%. All 7 tabs are render-checked with
+Streamlit AppTest
 (`tests/test_frontend.py::test_all_seven_tabs_render_after_restyle`).
 
 ---
@@ -315,7 +322,7 @@ docker compose exec api pytest         # same, inside Docker
 python tests/self_test.py              # measured end-to-end summary, exit 0
 ```
 
-**78 passed, 0 failed, 0 skipped** (commit `df622e4`). Tests use a
+**86 passed, 0 failed, 0 skipped.** Tests use a
 temp SQLite DB and the mock email backend — no real email, no network,
 no invented data. CI (`.github/workflows/ci.yml`) runs pytest on every
 push/PR with Python 3.12.

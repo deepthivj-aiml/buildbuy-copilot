@@ -63,14 +63,14 @@ modular, verify with measured tests + a live smoke test.
 
 ## 3. Test results (measured only)
 
-Command: `.venv/bin/python -m pytest tests/ -v` — **78 passed, 0 failed,
+Command: `.venv/bin/python -m pytest tests/ -v` — **86 passed, 0 failed,
 0 skipped** (3 warnings: LangChain deprecation, FastAPI `on_event`
 deprecation — pre-existing, not failures). Updated 2026-11-11 after the
-UI restyle (§16, +5 tests).
+professional UI polish (§21, +5 tests).
 
 | File | Tests | Covers |
 |---|---|---|
-| test_backend.py | 11 | health, requirement CRUD, ask (grounded + not-found), materials, approval pane ×2, simulate, confirm-refused, full draft→send→approve→confirm→invoice→records flow, reject, **GET /accuracy (8 metrics, formula/source/n/target) + Worst Answers action round-trip (200 → 409 duplicate → 404 missing → 422 unknown action)** |
+| test_backend.py | 12 | health, requirement CRUD, ask (grounded + not-found), materials, approval pane ×2, simulate, confirm-refused, full draft→send→approve→confirm→invoice→records flow, reject, **GET /accuracy (8 metrics, formula/source/n/target) + Worst Answers action round-trip (200 → 409 duplicate → 404 missing → 422 unknown action)** |
 | test_rag.py | 1 | retrieval top-1, not-found, cited answer |
 | test_vlm.py | 4 | scale detection, regions, title block, plan Q&A / not-found |
 | test_takeoff.py | 3 | takeoff maths, estimate labels, reconciliation, flagged lines; **typed requirement applied on top of a plan takeoff (override keeps old value, new material appends, no-quantity skipped); `run_takeoff` plan+typed merge and requirement-only fallback** |
@@ -84,11 +84,11 @@ UI restyle (§16, +5 tests).
 | test_email.py | 2 | mock send + idempotent duplicate, draft + outbox drain |
 | test_observability.py | 8 | rate NULLs, empty-day NULLs, measured groundedness 0.5, **METRIC_DEFS 8 unique, rollup populates retrieval/guardrail/ranking/cache/cost + takeoff NULL, empty dashboard all "no data", Worst Answers + PII-free raw events, Worst Answer action add-once-then-refuse** |
 | test_records.py | 2 | records CSV/JSON round-trip, invoice only when recorded |
-| test_frontend.py | 20 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A, **frontend/backend METRIC_DEFS agreement, accuracy format/status never invents, no evaluation UI in the Accuracy tab (test asserts Worst Answers / Eval Run History / drill-down are not rendered), demo dashboard complete + honest (takeoff "no data", buyer-agent 1.0 with 0.58 agreement rate separate), live fetch returns None when backend down, real Streamlit AppTest render of the Accuracy tab; NEW: parser item/unit/location + LLM-hook fallback, takeoff updates from typed requirement (all 5 cases), supplier contact never invented, quote-email preview OFF/ON + blocked + backend parity, AppTest end-to-end takeoff update, AppTest email preview/edit/send, AppTest blocked send when email not held, AppTest render of all 7 tabs after the restyle** |
-| test_theme.py | 4 | palette/CSS consistency, status chips keep their text label (HTML-escaped), journey stepper shows all 9 steps + clamps, hero labels demo/live honestly |
+| test_frontend.py | 26 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A, **frontend/backend METRIC_DEFS agreement, accuracy format/status never invents, no evaluation UI in the Accuracy tab (test asserts Worst Answers / Eval Run History / drill-down are not rendered), demo dashboard complete + honest (takeoff "no data", buyer-agent 1.0 with 0.58 agreement rate separate), live fetch returns None when backend down, real Streamlit AppTest render of the Accuracy tab; NEW: parser item/unit/location + LLM-hook fallback, takeoff updates from typed requirement (all 5 cases), supplier contact never invented, quote-email preview OFF/ON + blocked + backend parity, AppTest end-to-end takeoff update, AppTest email preview/edit/send, AppTest blocked send when email not held, AppTest render of all 7 tabs after the restyle; §21 NEW: trend rows sorted chronologically + missing day is a gap (not 0%), stepper matches the selected tab on all 7 tabs, email-card count wording is unambiguous** |
+| test_theme.py | 6 | palette/CSS consistency, status chips keep their text label (HTML-escaped), journey stepper shows all 9 steps + clamps, hero labels demo/live honestly; **§21 NEW: palette contrast passes WCAG AA (primary/ink/muted/chips ≥ 4.5:1), professional design system is consistent (compact hero, one card, typography scale)** |
 | test_modularity.py | 3 | public interfaces, import map, no auto-location / no hard torch/faiss |
 | test_escalation.py | 6 | agent identity in draft (OFF/ON), send OFF hides contact end-to-end, send ON shares it, answerable question answered, unanswerable escalates → customer emailed → customer reply to supplier |
-| **Total** | **78** | |
+| **Total** | **86** | |
 
 Also: `.venv/bin/python tests/self_test.py` → **exit 0** (all 9 sections
 print measured results; evals 73 pairs, retrieval top-1/top-3 and
@@ -683,3 +683,63 @@ dashboard only, and keep the UI for user input only — not evaluation.
   Answers" / "Eval Run History" / "Drill-down" / "Add to eval set" /
   "Mark fixed". UAT §6 is now 6.1–6.8 (evaluation checks 6.5–6.9
   removed; 2.8 updated).
+
+## 21. Professional UI polish (user update 2026-11-10 22:13)
+
+Brown palette kept (user's choice), made professional rather than
+flashy. No functionality, label, or honesty rule changed: 7 tabs,
+"estimate, not a surveyed quantity", "no data yet" empty states,
+DEMO labelling, evaluations internal-only, contact sharing OFF by
+default, nothing ordered without approval.
+
+- **Design system (`frontend/theme.py`, documented in the file):**
+  one typography scale (H1 1.6rem/600, H2 1.2rem/600 with a 3px brown
+  rule, captions 0.85rem muted #6B5D4F), one card design (white, 1px
+  #E5DCCB border, 12px radius, 14px/16px padding, one soft shadow),
+  one primary action per section (gradient brown; everything else
+  secondary — "Confirm scale 1:50" and per-card "Send to …" were
+  demoted from primary; bulk send and "Approve this offer" stay
+  primary in their own sections), tables with right-aligned
+  `$`-formatted currency (shortlist Unit/Landed, twin "New landed"),
+  compact hero (20px/24px padding, 1.55rem title, one tagline line).
+  New `theme.contrast_ratio()` (WCAG 2.1) — primary/ink/muted and
+  all chip text/background pairs pass AA (≥ 4.5:1); ink on the cream
+  page is ≥ 7:1. Colour is still decoration only: every chip/step
+  keeps its text label.
+- **Quirk 1 — journey stepper lagged one step behind the tab.**
+  Root cause: the stepper was rendered BEFORE the nav radio was
+  created, so `session_state["nav"]` still held the previous run's
+  tab. Fix (`frontend/app.py`): `journey_stage(nav)` now takes the
+  radio value as an argument and the stepper renders AFTER the radio;
+  the mapping is the furthest step each tab covers (Suppliers & Twin
+  → Twin (3), My Orders → Order (6)); Settings is not a journey step
+  and keeps existing progress instead of resetting to 0; order status
+  can only move the stage forward.
+- **Quirk 2 — trend chart day labels out of order, Eval pass % 0%
+  on Oct 31.** Root causes: (a) the Altair charts used a nominal
+  "Day" axis, which sorts alphabetically ("Nov 1", "Nov 10", "Nov 2"
+  …); (b) the demo series literally contained 0 for Oct 31, a day
+  with NO eval run. Fix: `frontend/accuracy.py::parse_day_label`
+  (ISO "2026-11-10" and demo "Oct 28" → real dates), `trend_rows` /
+  `cost_rows` sort chronologically and carry an ISO "Date" column;
+  the charts now use a temporal axis (`Date:T`, "%b %d"); the demo
+  series has None for Oct 31, so the line breaks there — a gap,
+  never 0%. The demo trends builder in `app.py` is None-safe for
+  the eval-pass value.
+- **Quirk 3 — "Showing 1 email card" wording.** Root cause: the
+  banner said "only 1 of the 1 ranked suppliers" while naming 5
+  MOQ-excluded suppliers — the reader could not tell whether cards
+  were dropped. Fix: the banner now states plainly how many cards
+  are shown, how many suppliers can be emailed, and how many were
+  considered in total ("Showing 1 email card — 1 supplier can be
+  emailed for this requirement. 6 suppliers were considered in
+  total. Excluded by MOQ …").
+- **Tests:** 86 passed, 0 failed (`pytest tests/ -v`), `self_test.py`
+  exit 0. New: `test_trend_rows_sorted_chronologically_and_missing_
+  day_is_a_gap`, `test_stepper_matches_selected_tab` (AppTest: the
+  current step matches the selected tab on all 7 tabs),
+  `test_email_card_count_wording_is_unambiguous`,
+  `test_palette_contrast_passes_wcag_aa`,
+  `test_professional_design_system_is_consistent`. UAT §8 gains 8.9–
+  8.11 (stepper, chart dates/gap, email count); §6.3 notes the
+  temporal axis.

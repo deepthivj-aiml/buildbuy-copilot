@@ -56,6 +56,7 @@ from accuracy import (  # noqa: E402
     fetch_live_accuracy,
     format_value,
     metric_status,
+    parse_day_label,
 )
 from helpers import (  # noqa: E402
     API_URL,
@@ -233,28 +234,35 @@ else:
                "to live mode.")
 
 
-def journey_stage():
-    """0-based step of the buyer journey from session state."""
+def journey_stage(nav):
+    """0-based step of the buyer journey for the CURRENT tab.
+
+    Takes ``nav`` (the radio value) as an argument — the stepper
+    must be rendered AFTER the radio is created, because
+    session_state["nav"] still holds the PREVIOUS run's tab until
+    the widget exists (live bug 2026-11-10: the stepper lagged one
+    step behind the selected tab — "Materials — current" while on
+    Suppliers & Twin). Mapping is the FURTHEST step each tab
+    covers: Suppliers & Twin ends at Twin (3), My Orders at Order
+    (6). Settings is not a journey step, so it keeps whatever
+    progress the requirement / order status already implies
+    instead of resetting to 0. Order status can only move the
+    stage forward, never back."""
     status = st.session_state.get("order_status", "PENDING")
     nav_stage = {"1 · Start": 0, "2 · Plan & Materials": 1,
-                 "3 · Suppliers & Twin": 2, "4 · Buyer Agent": 3,
-                 "5 · My Orders": 4, "6 · Accuracy": 4,
-                 "7 · Settings": 0}.get(st.session_state.get("nav", "1 · Start"), 0)
+                 "3 · Suppliers & Twin": 3, "4 · Buyer Agent": 4,
+                 "5 · My Orders": 6, "6 · Accuracy": 4,
+                 "7 · Settings": None}.get(nav, 0)
     status_stage = {"PENDING": 3, "APPROVED": 4, "REJECTED": 4,
                     "CONFIRMED": 6, "DELIVERED": 7,
                     "INVOICE_PENDING": 7, "INVOICE_RECEIVED": 8}.get(status, 3)
-    stage = nav_stage
+    stage = nav_stage if nav_stage is not None else 0
     if st.session_state.get("requirement"):
         stage = max(stage, 1)
     if status in ("APPROVED", "REJECTED", "CONFIRMED", "DELIVERED",
                   "INVOICE_PENDING", "INVOICE_RECEIVED"):
         stage = max(stage, status_stage)
     return min(stage, 8)
-
-
-st.markdown(journey_stepper(journey_stage()), unsafe_allow_html=True)
-st.caption("Buyer journey: Requirement → Materials → Suppliers → Twin → "
-           "Buyer agent → Approval → Order → Delivery → Invoice")
 st.markdown(
     status_chip(f"Free tier left: "
                 f"{FREE_TIER['plans'] - st.session_state['usage']['plans']} plan", "info")
@@ -287,6 +295,12 @@ if _pending in NAV:
 # never be assigned after creation in the same run (see pending_nav).
 nav = st.radio("Section", NAV, horizontal=True, label_visibility="collapsed",
                key="nav")
+
+# Journey stepper — rendered HERE, after the radio exists, so the
+# current step matches the tab just selected (see journey_stage).
+st.markdown(journey_stepper(journey_stage(nav)), unsafe_allow_html=True)
+st.caption("Buyer journey: Requirement → Materials → Suppliers → Twin → "
+           "Buyer agent → Approval → Order → Delivery → Invoice")
 
 # ---------------------------------------------------------------------------
 # Tab 1 — Start
@@ -421,7 +435,9 @@ elif nav == "2 · Plan & Materials":
         st.warning("I read the scale as 1:50 from the title block. Is that right?")
         cc1, cc2 = st.columns(2)
         with cc1:
-            if st.button("✓ Confirm scale 1:50", type="primary"):
+            # Secondary, not primary: the tab's one primary action is
+            # "Find suppliers for these materials →" below.
+            if st.button("✓ Confirm scale 1:50"):
                 st.session_state["scale_confirmed"] = True
                 st.rerun()
         with cc2:
@@ -602,7 +618,13 @@ elif nav == "3 · Suppliers & Twin":
         "Quality /100": r["quality_score"],
         "Why this rank": r["why"],
     } for r in sorted(rows, key=lambda r: (r["value_rank"] is None, r["value_rank"]))])
-    st.dataframe(table, use_container_width=True, hide_index=True)
+    st.dataframe(table, use_container_width=True, hide_index=True,
+                 column_config={
+                     # Currency columns are right-aligned and formatted
+                     # "$%.2f" — numbers never left-aligned against text.
+                     "Unit ($)": st.column_config.NumberColumn("Unit ($)", format="$%.2f"),
+                     "Landed ($)": st.column_config.NumberColumn("Landed ($)", format="$%.2f"),
+                 })
     st.caption("Total landed cost = unit price × quantity + transport + taxes/fees — "
                "the breakdown per supplier is in the cards below. “excl. transport” "
                "means no delivery location was typed, so transport is not in the total. "
@@ -700,7 +722,11 @@ elif nav == "3 · Suppliers & Twin":
         if sim["risk_level"] == "High":
             st.warning(f"⚠ {r['name']}: total risk HIGH ({sim['risk']}) under this "
                        f"what-if — cheap price does not cover late delivery + weak quality.")
-    st.dataframe(pd.DataFrame(sim_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(sim_rows), use_container_width=True, hide_index=True,
+                 column_config={
+                     "New landed ($)": st.column_config.NumberColumn(
+                         "New landed ($)", format="$%.2f"),
+                 })
     rec = top3[0] if top3 else None
     if rec:
         st.success(f"**Twin recommendation (best value): {rec['name']}** — lowest combined "
@@ -784,12 +810,21 @@ elif nav == "4 · Buyer Agent":
             _reasons.append(
                 "email not held, so no email can be sent: "
                 + ", ".join(r["name"] for r in _blocked))
+        # Unambiguous counts (professional polish 2026-11-10): the old
+        # wording said "only 1 of the 1 ranked suppliers" while naming
+        # 5 MOQ-excluded suppliers — the reader could not tell whether
+        # cards were dropped. Say plainly: how many cards are shown,
+        # how many suppliers can be emailed, how many were considered
+        # in total, and why the rest cannot be emailed.
+        _considered = len(top3) + len(excluded)
         st.info(
             f"Showing {len(_sendable)} email card"
-            f"{'' if len(_sendable) == 1 else 's'} — only {len(_sendable)} "
-            f"of the {len(top3)} ranked supplier"
-            f"{'' if len(top3) == 1 else 's'} can be emailed for this "
-            f"requirement. " + " ".join(_reasons))
+            f"{'' if len(_sendable) == 1 else 's'} — "
+            f"{len(_sendable)} supplier"
+            f"{'' if len(_sendable) == 1 else 's'} can be emailed for "
+            f"this requirement. {_considered} supplier"
+            f"{'' if _considered == 1 else 's'} were considered in "
+            f"total. " + " ".join(_reasons))
     for r in top3:
         details = supplier_contact_details(r)
         share = st.checkbox(
@@ -897,8 +932,10 @@ elif nav == "4 · Buyer Agent":
                         st.session_state.pop(f"quote-body-{r['name']}-{tag}", None)
                     st.rerun()
             with b3:
+                # Secondary: the section's one primary action is the
+                # bulk "Send quote request(s)" button below.
                 if st.button(f"📧 Send to {r['name']}", key=f"quote-send-{r['name']}",
-                             type="primary", disabled=not generated["sendable"]):
+                             disabled=not generated["sendable"]):
                     final_body = body if share else strip_contact_details(body, buyer)
                     st.session_state["quote_sent"][r["name"]] = {
                         "to": generated["to"], "subject": subject,
@@ -1163,7 +1200,10 @@ elif nav == "6 · Accuracy":
                        "with measured values from `metrics_daily` / "
                        "`eval_runs` when the backend is live.")
         trends = [{"date": d, "groundedness": g / 100, "retrieval_top1": r / 100,
-                   "eval_pass_rate": e / 100,
+                   # None-safe: Oct 31 has NO eval run in the demo
+                   # (DEMO_EVAL_PASS is None there) — a missing day is
+                   # a gap in the chart, never 0%.
+                   "eval_pass_rate": (None if e is None else e / 100),
                    "cost_per_job_usd": c, "latency_p95_ms": int(p * 1000),
                    "cache_hit_rate": None}
                   for d, g, r, e, c, p in zip(
@@ -1268,7 +1308,14 @@ elif nav == "6 · Accuracy":
                    "retrieval top-1 85%, eval pass 90%. A series crossing "
                    "below its dashed line triggers an alert (see above).")
         if trends:
+            # "Date" is a REAL date (parsed from the day label) and
+            # rows are sorted chronologically. The old nominal "Day"
+            # axis sorted alphabetically ("Nov 1", "Nov 10", "Nov 2" …)
+            # — live bug 2026-11-10. A missing value (Eval pass None
+            # on Oct 31, no run that day) stays None, so the line
+            # breaks there — a gap, never a 0% drop.
             trend_df = pd.DataFrame([{
+                "Date": parse_day_label(t["date"]),
                 "Day": t["date"],
                 "Groundedness %": (None if t.get("groundedness") is None
                                    else round(t["groundedness"] * 100, 1)),
@@ -1276,13 +1323,14 @@ elif nav == "6 · Accuracy":
                                       else round(t["retrieval_top1"] * 100, 1)),
                 "Eval pass %": (None if t.get("eval_pass_rate") is None
                                 else round(t["eval_pass_rate"] * 100, 1)),
-            } for t in trends]).set_index("Day")
+            } for t in trends]).sort_values("Date")
             try:
                 import altair as alt
-                base = alt.Chart(trend_df.reset_index()).transform_fold(
+                base = alt.Chart(trend_df).transform_fold(
                     ["Groundedness %", "Retrieval top-1 %", "Eval pass %"],
                     as_=["Metric", "Value"]).mark_line().encode(
-                    x="Day:N", y=alt.Y("Value:Q", scale=alt.Scale(domain=[0, 105])),
+                    x=alt.X("Date:T", axis=alt.Axis(format="%b %d", title="Day")),
+                    y=alt.Y("Value:Q", scale=alt.Scale(domain=[0, 105])),
                     color="Metric:N")
                 rules = alt.Chart(pd.DataFrame([
                     {"Threshold": "Groundedness alert 90%", "Value": 90},
@@ -1292,7 +1340,7 @@ elif nav == "6 · Accuracy":
                     y="Value:Q", tooltip=["Threshold:N"])
                 st.altair_chart(base + rules, use_container_width=True)
             except Exception:
-                st.line_chart(trend_df)
+                st.line_chart(trend_df.set_index("Date"))
                 st.caption("Thresholds (dashed in the live chart): "
                            "groundedness 90% · retrieval top-1 85% · "
                            "eval pass 90%.")
@@ -1304,25 +1352,27 @@ elif nav == "6 · Accuracy":
                    "should fall as the cache hit rate rises.")
         if trends:
             cost_df = pd.DataFrame([{
+                "Date": parse_day_label(t["date"]),
                 "Day": t["date"],
                 "Cost per job ($)": t.get("cost_per_job_usd"),
                 "p95 ask latency (s)": (
                     None if t.get("latency_p95_ms") is None
                     else round(t["latency_p95_ms"] / 1000, 1)),
-            } for t in trends]).set_index("Day")
+            } for t in trends]).sort_values("Date")
             try:
                 import altair as alt
-                base = alt.Chart(cost_df.reset_index()).transform_fold(
+                base = alt.Chart(cost_df).transform_fold(
                     ["Cost per job ($)", "p95 ask latency (s)"],
                     as_=["Metric", "Value"]).mark_line().encode(
-                    x="Day:N", y="Value:Q", color="Metric:N")
+                    x=alt.X("Date:T", axis=alt.Axis(format="%b %d", title="Day")),
+                    y="Value:Q", color="Metric:N")
                 rule = alt.Chart(pd.DataFrame([
                     {"Threshold": "p95 latency alert 10 s", "Value": 10},
                 ])).mark_rule(strokeDash=[6, 4], color="red").encode(
                     y="Value:Q", tooltip=["Threshold:N"])
                 st.altair_chart(base + rule, use_container_width=True)
             except Exception:
-                st.line_chart(cost_df)
+                st.line_chart(cost_df.set_index("Date"))
                 st.caption("Threshold: p95 ask latency 10 s (dashed in the "
                            "live chart).")
         else:
@@ -1340,7 +1390,7 @@ elif nav == "6 · Accuracy":
                    "dashboard only, with no fix list and no evaluation "
                    "actions.")
 
-# Tab 7 — Settings
+# ---------------------------------------------------------------------------
 # Tab 7 — Settings
 # ---------------------------------------------------------------------------
 elif nav == "7 · Settings":

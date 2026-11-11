@@ -17,8 +17,31 @@ import json
 import os
 import urllib.error
 import urllib.request
+from datetime import date as _date
 
 from helpers import API_URL
+
+# Demo trend labels are "Oct 28" style (Oct/Nov 2026, the demo window);
+# live trend dates from the backend are ISO "2026-11-10". Both parse
+# to a real date so charts sort chronologically instead of
+# alphabetically ("Nov 1", "Nov 10", "Nov 2" … — the live bug
+# 2026-11-10: day labels out of order on a nominal axis).
+_DEMO_YEAR = 2026
+_MONTHS = {"Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+           "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12}
+
+
+def parse_day_label(day):
+    """Parse a trend day label to a date: ISO "2026-11-10" or
+    "Oct 28" (demo window, year 2026). Raises ValueError on anything
+    else — a bad label is a bug, never silently re-ordered."""
+    text = str(day).strip()
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":
+        return _date.fromisoformat(text)
+    parts = text.split()
+    if len(parts) == 2 and parts[0] in _MONTHS and parts[1].isdigit():
+        return _date(_DEMO_YEAR, _MONTHS[parts[0]], int(parts[1]))
+    raise ValueError(f"unrecognised trend day label: {day!r}")
 
 METRIC_DEFS = [
     {"key": "groundedness", "name": "Groundedness",
@@ -127,26 +150,51 @@ def _as_fraction(value):
 def trend_rows(days, groundedness, retrieval_top1, eval_pass):
     """One row per day for the accuracy trend chart. Series may be
     fractions (0.92) or percentages (92) — both become percentages.
-    None stays None (no data yet). Kept pure so the chart data is
-    testable."""
+    None stays None (no data yet — a missing day is a GAP in the
+    chart, never 0%). Rows come back sorted chronologically by real
+    date, with a "Date" (ISO) column for a temporal chart axis; "Day"
+    keeps the short display label. Unparseable labels keep their
+    input order at the end instead of crashing the dashboard."""
     rows = []
     for i, day in enumerate(days):
         def _pct(series):
             v = _as_fraction(series[i] if i < len(series) else None)
             return None if v is None else round(v * 100, 1)
+        try:
+            parsed = parse_day_label(day)
+        except ValueError:
+            parsed = None
         rows.append({
             "Day": day,
+            "Date": parsed.isoformat() if parsed else str(day),
             "Groundedness %": _pct(groundedness),
             "Retrieval top-1 %": _pct(retrieval_top1),
             "Eval pass %": _pct(eval_pass),
+            "_sort": parsed,
         })
+    rows.sort(key=lambda r: (r["_sort"] is None, r["_sort"] or _date.min))
+    for r in rows:
+        del r["_sort"]
     return rows
 
 
 def cost_rows(days, cost_per_job, latency_p95_s):
-    """One row per day for the cost/latency trend chart."""
-    return [{
-        "Day": day,
-        "Cost per job ($)": cost_per_job[i],
-        "p95 ask latency (s)": latency_p95_s[i],
-    } for i, day in enumerate(days)]
+    """One row per day for the cost/latency trend chart — same
+    chronological sort and ISO "Date" column as trend_rows."""
+    rows = []
+    for i, day in enumerate(days):
+        try:
+            parsed = parse_day_label(day)
+        except ValueError:
+            parsed = None
+        rows.append({
+            "Day": day,
+            "Date": parsed.isoformat() if parsed else str(day),
+            "Cost per job ($)": cost_per_job[i],
+            "p95 ask latency (s)": latency_p95_s[i],
+            "_sort": parsed,
+        })
+    rows.sort(key=lambda r: (r["_sort"] is None, r["_sort"] or _date.min))
+    for r in rows:
+        del r["_sort"]
+    return rows
