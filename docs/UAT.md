@@ -79,12 +79,19 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 
 | # | Check | Pass means |
 |---|---|---|
-| 6.1 | 4 headline cards | Groundedness / thumbs-up rate / takeoff mean error / cost per job, each with "n = …" |
-| 6.2 | 2 trend charts | Accuracy over time + cost/latency over time render from the metrics |
-| 6.3 | Per-module table | One row per module with its metrics and worst-in-7-days |
-| 6.4 | Worst Answers list | Lowest-scoring answers with question, answer, citations, thumbs, reason |
-| 6.5 | Eval Run History | Runs listed with date, eval set, groundedness, retrieval top-1, guardrail block rate, cache hit rate, pass/fail |
-| 6.6 | Empty state | With metrics cleared, the tab says "No data yet" — never a made-up percentage |
+| 6.1 | 8-metric table | All 8 metrics shown separately — Groundedness, Retrieval accuracy, Answer accuracy, Takeoff estimate accuracy, Supplier ranking accuracy, Buyer-agent accuracy, Guardrail block rate, Cost / cache / speed — each with formula, source, n=, target, status. No single blended accuracy score anywhere |
+| 6.2 | 4 headline cards | Groundedness / thumbs-up rate / takeoff mean error / cost per job, each with "n = …" — the same 4 metrics as the table, not a different score |
+| 6.3 | 2 trend charts | Accuracy over time + cost/latency over time render from the metrics, with alert thresholds as **dashed lines** (groundedness 90%, retrieval top-1 85%, eval pass 90%, p95 latency 10 s) |
+| 6.4 | Per-module table | One row per module with its metrics and worst-in-7-days |
+| 6.5 | Worst Answers list | 10 lowest-scoring answers with question, answer, citations, thumbs, reason; thumbs-down first, then ungrounded |
+| 6.6 | "Add to eval set" | Tapping it on a Worst Answer records the labelled example for the next eval run; tapping it again on the same answer is refused (never duplicated) |
+| 6.7 | "Mark fixed" | Tapping it records the fix; the row keeps its status and cannot be added twice |
+| 6.8 | Eval Run History | Runs listed with date, eval set, groundedness, retrieval top-1, guardrail block rate, cache hit rate, pass/fail; a failed run blocks the deploy |
+| 6.9 | Drill-down | Pick a step (ask / retrieval / takeoff / guardrail / send_supplier_email / twin_simulate) and see raw events: request_id, step, model, latency, grounded, cache hit, guardrail action, cost — no prompt, plan text or email body shown |
+| 6.10 | Empty state | With metrics cleared, the tab says "No data yet" — never a made-up percentage |
+| 6.11 | Live vs demo | With the backend up, the tab shows a LIVE badge and measured values; with no backend, it says the data is synthetic demo data |
+| 6.12 | Buyer-agent invariant | After approving and confirming an order, Buyer-agent accuracy shows 100.0% (approval-before-order); the quotes-agreed rate is shown separately, not blended in |
+| 6.13 | Takeoff honesty | Takeoff estimate accuracy shows "no data yet" until a takeoff line is actually corrected — no invented error rate |
 
 ## 7. Settings — privacy and data
 
@@ -99,4 +106,4 @@ locally (`EMAIL_PROVIDER=mock`); no real email is sent during UAT.
 
 | Date | Device | Tester | Items passed / total | Failures (issue #) |
 |---|---|---|---|---|
-| _yyyy-mm-dd_ | _phone model / desktop_ | | _/ 40_ | |
+| _yyyy-mm-dd_ | _phone model / desktop_ | | _/ 59_ | |

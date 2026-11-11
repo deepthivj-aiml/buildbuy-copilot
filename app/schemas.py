@@ -404,6 +404,111 @@ class ContactSharingToggle(BaseModel):
     share: bool
 
 
+# ------------------------------------------------------------- accuracy (observability)
+class AccuracyMetricOut(BaseModel):
+    key: str
+    name: str
+    formula: str
+    source: str
+    target: str
+    direction: str
+    unit: str
+    value: float | None = None
+    n: int = 0
+    status: str = "no_data"  # ok | alert | no_data
+    approval_before_order: float | None = None
+    agreement_rate: float | None = None  # buyer-agent only: quotes agreed ÷ sent
+
+
+class AccuracyHeadlineOut(BaseModel):
+    label: str
+    value: float | None = None
+    n: int = 0
+    unit: str = "rate"
+
+
+class AccuracyTrendOut(BaseModel):
+    date: str
+    groundedness: float | None = None
+    retrieval_top1: float | None = None
+    eval_pass_rate: float | None = None
+    cost_per_job_usd: float | None = None
+    latency_p95_ms: int | None = None
+    cache_hit_rate: float | None = None
+
+
+class AccuracyModuleOut(BaseModel):
+    module: str
+    metric: str
+    value: float | None = None
+    n: int = 0
+    worst: str = ""
+
+
+class AccuracyWorstAnswerOut(BaseModel):
+    qa_log_id: str
+    question: str
+    answer: str
+    citations: str = ""
+    thumbs: int = 0
+    grounded: bool | None = None
+    reason: str = ""
+    status: str = "open"  # open | in_eval_set | fixed
+
+
+class AccuracyEvalRunOut(BaseModel):
+    date: str
+    eval_set: str
+    groundedness: float | None = None
+    retrieval_top1: float | None = None
+    guardrail_block_rate: float | None = None
+    cache_hit_rate: float | None = None
+    result: str
+
+
+class AccuracyEventOut(BaseModel):
+    request_id: str
+    step: str
+    model: str | None = None
+    latency_ms: int | None = None
+    grounded: bool | None = None
+    cache_hit: bool = False
+    guardrail_action: str = "allow"
+    cost_usd: float = 0.0
+    created_at: str = ""
+
+
+class AccuracyAlertOut(BaseModel):
+    metric: str
+    value: float | None = None
+    threshold: float | None = None
+    direction: str = "higher"
+
+
+class AccuracyDashboardOut(BaseModel):
+    metrics: list[AccuracyMetricOut]
+    headline: list[AccuracyHeadlineOut]
+    trends: list[AccuracyTrendOut]
+    per_module: list[AccuracyModuleOut]
+    worst_answers: list[AccuracyWorstAnswerOut]
+    eval_runs: list[AccuracyEvalRunOut]
+    raw_events: list[AccuracyEventOut]
+    alerts: list[AccuracyAlertOut]
+    approval_before_order: float | None = None
+    approval_violations: int = 0
+    source: str = ""
+
+
+class WorstAnswerActionRequest(BaseModel):
+    action: Literal["add_to_eval_set", "mark_fixed"]
+
+
+class WorstAnswerActionOut(BaseModel):
+    qa_log_id: str
+    status: str
+    error: str | None = None
+
+
 # ------------------------------------------------------------- misc
 class ErrorOut(BaseModel):
     detail: str

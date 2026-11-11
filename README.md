@@ -42,11 +42,60 @@ buying team, and cannot afford a late delivery or a wrong quantity.
    to the supplier in your words (see "Supplier questions" below).
 5. **My Orders** — full timeline requirement → invoice, delivery chase,
    invoice tracking (invoice details recorded only from the supplier).
-6. **Accuracy** — observability dashboard: groundedness, thumbs-up rate,
-   takeoff error, cost per job (each with n=), trends, Worst Answers, Eval
-   Run History. Measured or labelled synthetic — never invented.
+6. **Accuracy** — observability dashboard: 8 separate metrics (never
+   blended into one score), each with formula, source, n= and target;
+   4 headline cards; 2 trend charts with alert thresholds as dashed
+   lines; per-module table; Worst Answers (10 lowest, each "Add to eval
+   set" / "Mark fixed"); Eval Run History; drill-down to raw events.
+   Live data from the backend when it is up, labelled synthetic demo
+   data otherwise, "no data yet" when empty — never invented.
 7. **Settings** — contact, sharing defaults, free-tier usage, BYO key status
    (never the key value), data export/delete.
+
+## Accuracy — observability dashboard
+
+The Accuracy tab answers one question: *is the copilot getting better
+or worse?* It shows **8 separate metrics, never blended into one
+score** — a problem in one module cannot hide behind another:
+
+| # | Metric | Formula | Target |
+|---|---|---|---|
+| 1 | Groundedness | grounded answers ÷ all answers | ≥ 95% |
+| 2 | Retrieval accuracy | RAG top-1 correct ÷ eval set (top-3 alongside) | top-1 ≥ 90% |
+| 3 | Answer accuracy | 👍 ÷ (👍 + 👎); "not found" counted separately, never as a wrong answer | ≥ 90% |
+| 4 | Takeoff estimate accuracy | mean absolute % error vs user-corrected quantities | mean error ≤ 10% |
+| 5 | Supplier ranking accuracy | chosen supplier was ranked #1 | ≥ 50% |
+| 6 | Buyer-agent accuracy | quotes agreed ÷ sent; **approval-before-order = 100%** (state-machine invariant, shown as the metric value; the agreement rate is shown separately) | approval-before-order 100% |
+| 7 | Guardrail block rate | blocked ÷ adversarial inputs (false-positive rate tracked separately) | 100% on the adversarial set |
+| 8 | Cost / cache / speed | cache hit rate, $ saved, latency p50/p95, cost per query / per job | cache hit ≥ 50%, p95 ask latency < 10 s |
+
+Plus: 4 headline cards (groundedness, 👍 rate, takeoff error, cost per
+job — the same 4 metrics, not a different score), 2 trend charts with
+alert thresholds as **dashed lines** (groundedness 90%, retrieval top-1
+85%, eval pass 90%, p95 latency 10 s), a per-module breakdown table, a
+**Worst Answers** list (10 lowest — thumbs-down first, then ungrounded;
+each row has "Add to eval set" and "Mark fixed", and a row already acted
+on is never added twice), **Eval Run History** (a failed eval run blocks
+the deploy via the CI regression gate), and a **drill-down** to raw
+events (request_id, step, model, latency, grounded, cache hit, guardrail
+action, cost — prompts, plan text and email bodies are never logged in
+full and never shown).
+
+- **Live mode** (backend up at `API_URL`): the tab fetches
+  `GET /accuracy` from `app/observability.py` (`metrics_daily` +
+  `eval_runs` + `qa_log` + `observability_events`). Empty metrics show
+  **"no data yet"** — never a made-up percentage. Takeoff accuracy stays
+  "no data yet" until a user actually corrects a takeoff line, because
+  edits overwrite the quantity in place and no corrected-vs-estimate pair
+  is recorded yet.
+- **Demo mode** (no backend): labelled synthetic data, clearly marked —
+  the tab says so, and the Worst Answers actions are noted locally
+  instead of being written to the eval set.
+- The loop is: evals → dashboard → Worst Answers / failing items → fix
+  → re-run evals → the dashboard shows whether it improved. The
+  dashboard never changes the product by itself.
+- Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §10.
+  UAT steps: [`docs/UAT.md`](docs/UAT.md) §6.
 
 ## Architecture
 
@@ -105,9 +154,9 @@ others. Full map + per-module commands:
 | Semantic cache | `app/cache/` | `pytest tests/test_cache.py -v` |
 | Evals | `app/evals/` | `pytest tests/test_evals.py -v` |
 | LoRA | `app/lora/` | `pytest tests/test_lora.py -v` |
-| Observability / Accuracy | `app/observability.py` | `pytest tests/test_observability.py -v` |
+| Observability / Accuracy | `app/observability.py` (+ `GET /accuracy`, `POST /accuracy/worst-answers/{id}/action`) | `pytest tests/test_observability.py -v` |
 | Records / summaries | `app/records/` | `pytest tests/test_records.py -v` |
-| Frontend | `frontend/app.py`, `helpers.py`, `demo_data.py` | `pytest tests/test_frontend.py -v` |
+| Frontend | `frontend/app.py`, `helpers.py`, `demo_data.py`, `accuracy.py` | `pytest tests/test_frontend.py -v` (pure helpers + real Streamlit AppTest render of the Accuracy tab when Streamlit is installed) |
 
 Boundaries are enforced by `tests/test_modularity.py` (import map,
 public interfaces, no auto-location code, no hard torch/faiss imports).

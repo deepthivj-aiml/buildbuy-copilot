@@ -283,3 +283,53 @@ def test_reject_places_no_order():
     assert r.json()["status"] == "rejected"
     r = client.post(f"/requirements/{req['id']}/confirm")
     assert r.status_code == 409
+
+
+def test_accuracy_endpoint_returns_eight_metrics_and_empty_state():
+    r = client.get("/accuracy")
+    assert r.status_code == 200, r.text
+    dash = r.json()
+    assert len(dash["metrics"]) == 8
+    keys = {m["key"] for m in dash["metrics"]}
+    assert keys == {"groundedness", "retrieval_top1", "thumbs_up_rate",
+                    "takeoff_mape", "ranking_top1_rate", "buyer_agent",
+                    "guardrail_block_rate", "cost_cache_speed"}
+    # Every metric carries formula, source, n and target — never a bare
+    # number. Values may be None ("no data yet") or measured; nothing
+    # here is invented by the endpoint.
+    for m in dash["metrics"]:
+        assert m["formula"] and m["source"] and m["target"]
+        assert m["n"] >= 0
+    assert isinstance(dash["alerts"], list)
+    assert isinstance(dash["worst_answers"], list)
+    assert isinstance(dash["raw_events"], list)
+
+
+def test_accuracy_worst_answer_action_round_trip():
+    from app.db.models import QALog
+    from app.db.session import SessionLocal
+
+    req = _requirement()
+    db = SessionLocal()
+    qa = QALog(requirement_id=req["id"], question="How many bolts?",
+               answer="100", grounded=False, thumbs=-1)
+    db.add(qa)
+    db.commit()
+    qa_id = qa.id
+    db.close()
+    r = client.post(f"/accuracy/worst-answers/{qa_id}/action",
+                    json={"action": "add_to_eval_set"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "in_eval_set"
+    # Second add of the same answer is refused, never duplicated.
+    r = client.post(f"/accuracy/worst-answers/{qa_id}/action",
+                    json={"action": "add_to_eval_set"})
+    assert r.status_code == 409, r.text
+    r = client.post(f"/accuracy/worst-answers/999999/action",
+                    json={"action": "mark_fixed"})
+    assert r.status_code == 404
+    # Unknown action is rejected at the schema level (422), before the
+    # route's own 400 branch — either way it never reaches the store.
+    r = client.post(f"/accuracy/worst-answers/{qa_id}/action",
+                    json={"action": "delete"})
+    assert r.status_code == 422

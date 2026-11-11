@@ -91,3 +91,125 @@ def test_demo_answer_grounded_or_not_found():
     ans, _region, _clause, grounded = helpers.demo_answer(
         "What is the tensile strength of the moon base?")
     assert grounded is False and "not found" in ans.lower()
+
+
+# ------------------------------------------------------------- accuracy dashboard
+def test_accuracy_metric_defs_agree_with_backend():
+    """Frontend accuracy.py and backend app/observability.py must agree
+    on the 8 metrics (key, formula, target) — one source of truth, two
+    copies, checked here so they cannot drift apart silently."""
+    import accuracy
+
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from app.observability import METRIC_DEFS as BACKEND_DEFS
+
+    assert len(accuracy.METRIC_DEFS) == 8 == len(BACKEND_DEFS)
+    front = {d["key"]: d for d in accuracy.METRIC_DEFS}
+    back = {d["key"]: d for d in BACKEND_DEFS}
+    assert set(front) == set(back)
+    for key in front:
+        assert front[key]["formula"] == back[key]["formula"], key
+        assert front[key]["target"] == back[key]["target"], key
+        assert front[key]["direction"] == back[key]["direction"], key
+    assert "blended" not in " ".join(front)
+
+
+def test_accuracy_format_and_status_never_invents():
+    import accuracy
+
+    assert accuracy.format_value(None) == "no data yet"
+    assert accuracy.format_value(0.96) == "96.0%"
+    assert accuracy.format_value(0.42, "usd") == "$0.42"
+    assert accuracy.metric_status(accuracy.METRIC_DEFS[0], None) == "no_data"
+    assert accuracy.metric_status(accuracy.METRIC_DEFS[0], 0.96) == "ok"
+    assert accuracy.metric_status(accuracy.METRIC_DEFS[0], 0.89) == "alert"
+    # Takeoff is lower-is-better: 25% error alerts, 6% does not.
+    assert accuracy.metric_status(accuracy.METRIC_DEFS[3], 0.25) == "alert"
+    assert accuracy.metric_status(accuracy.METRIC_DEFS[3], 0.06) == "ok"
+    assert accuracy.dashboard_is_empty(
+        {"metrics": [{"value": None}, {"value": None}]}) is True
+    assert accuracy.dashboard_is_empty(
+        {"metrics": [{"value": 0.9}, {"value": None}]}) is False
+
+
+def test_accuracy_worst_answers_actions_and_merge():
+    import accuracy
+
+    worst = accuracy.worst_answers_from_feedback(
+        [{"question": "Why is the beam wrong?", "thumbs": "down",
+          "reason": "wrong number"}],
+        demo_data.DEMO_WORST_ANSWERS)
+    assert len(worst) == 10  # capped at 10, live row first
+    assert worst[0]["question"] == "Why is the beam wrong?"
+    assert worst[0]["live"] is True
+    acted = accuracy.apply_worst_action(worst, "demo-qa-01", "add_to_eval_set")
+    row = next(r for r in acted if r["qa_log_id"] == "demo-qa-01")
+    assert row["status"] == "in_eval_set"
+    # A row already acted on is left alone (backend refuses duplicates).
+    acted2 = accuracy.apply_worst_action(acted, "demo-qa-01", "mark_fixed")
+    row2 = next(r for r in acted2 if r["qa_log_id"] == "demo-qa-01")
+    assert row2["status"] == "in_eval_set"
+
+
+def test_accuracy_demo_dashboard_is_complete_and_honest():
+    import accuracy
+
+    dash = demo_data.DEMO_ACCURACY
+    assert len(dash["metrics"]) == 8
+    assert all(m["value"] is None or 0 <= m["value"] <= 1
+               for m in dash["metrics"])
+    # Takeoff has no data even in the demo — no corrected lines exist.
+    takeoff = next(m for m in dash["metrics"] if m["key"] == "takeoff_mape")
+    assert takeoff["value"] is None and takeoff["status"] == "no_data"
+    # Buyer-agent value is the approval-before-order invariant (1.0);
+    # the 58% agreement rate is separate, never blended in.
+    buyer = next(m for m in dash["metrics"] if m["key"] == "buyer_agent")
+    assert buyer["value"] == 1.0 and buyer["agreement_rate"] == 0.58
+    assert len(demo_data.DEMO_WORST_ANSWERS) == 10
+    assert len(demo_data.DEMO_RAW_EVENTS) == 10
+    # Raw events are PII-free: no prompt, plan text or email body.
+    assert all(set(e) <= {"request_id", "step", "model", "latency_ms",
+                          "grounded", "cache_hit", "guardrail_action",
+                          "cost_usd", "created_at"}
+               for e in demo_data.DEMO_RAW_EVENTS)
+    rows = accuracy.trend_rows(
+        demo_data.DEMO_METRICS_DAYS, demo_data.DEMO_GROUNDEDNESS,
+        demo_data.DEMO_RETRIEVAL_TOP1, demo_data.DEMO_EVAL_PASS)
+    assert len(rows) == 14 and rows[0]["Groundedness %"] == 92.0
+
+
+def test_accuracy_fetch_live_returns_none_when_backend_down():
+    import accuracy
+
+    assert accuracy.fetch_live_accuracy(
+        api_url="http://127.0.0.1:9", timeout=1) is None
+
+
+def test_accuracy_tab_renders_in_streamlit():
+    """Real render check: the Accuracy tab opens in demo mode, shows all
+    8 metric names, and raises no exception. Skipped where Streamlit is
+    not installed (the pure-helper tests above cover that case)."""
+    import pytest
+
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(ROOT / "frontend" / "app.py"))
+    at.run()
+    assert not at.exception, at.exception
+    at.radio[0].set_value("6 · Accuracy").run()
+    assert not at.exception, at.exception
+    text = " ".join(str(m.value) for m in at.markdown) + " ".join(
+        str(m.value) for m in at.dataframe) + " ".join(
+        str(s.value) for s in at.subheader) + " ".join(
+        str(h.value) for h in at.header)
+    for name in ("Groundedness", "Retrieval accuracy", "Answer accuracy",
+                 "Takeoff estimate accuracy", "Supplier ranking accuracy",
+                 "Buyer-agent accuracy", "Guardrail block rate",
+                 "Cost / cache / speed", "Worst Answers",
+                 "Eval Run History", "Drill-down"):
+        assert name in text, f"missing from Accuracy tab: {name}"
+    # Demo metrics are labelled synthetic — the tab never pretends they
+    # are live measurements.
+    assert "synthetic demo" in text.lower()

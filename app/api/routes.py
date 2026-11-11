@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.agents.escalation import (
@@ -75,6 +76,7 @@ from app.integrations import (
     run_takeoff,
     twin_simulate,
 )
+from app.observability import build_accuracy_dashboard, record_worst_answer_action
 from app.ranking import rank_shortlist
 from app.records.export import build_export
 from app.schemas import (
@@ -100,7 +102,10 @@ from app.schemas import (
     MessageOut,
     NegotiateRequest,
     OrderOut,
+    AccuracyDashboardOut,
     SupplierQuestionRequest,
+    WorstAnswerActionOut,
+    WorstAnswerActionRequest,
     PlanUpload,
     RequirementCreate,
     RequirementOut,
@@ -1300,3 +1305,39 @@ def module_status():
     """Which sibling modules are available (other workers' scope)."""
     return {"modules": MODULE_AVAILABILITY,
             "note": "Missing modules fall back to honest local behaviour; nothing is invented."}
+
+
+# ------------------------------------------------------------- accuracy (observability)
+@router.get("/accuracy", response_model=AccuracyDashboardOut)
+def accuracy_dashboard(days: int = Query(default=30, ge=1, le=90),
+                       db: Session = Depends(get_db)):
+    """Whole Accuracy tab payload — the 8 separate metrics, trends,
+    Worst Answers, Eval Run History and raw-event drill-down.
+
+    Every value is measured or None ("no data yet" in the UI). There is
+    no blended single accuracy score anywhere in this payload.
+    """
+    return build_accuracy_dashboard(db, days=days)
+
+
+@router.post("/accuracy/worst-answers/{qa_id}/action",
+             response_model=WorstAnswerActionOut)
+def worst_answer_action(qa_id: str, payload: WorstAnswerActionRequest,
+                        db: Session = Depends(get_db)):
+    """Add one Worst Answer to the eval set, or mark it fixed.
+
+    ``add_to_eval_set`` appends the QA pair to
+    ``data/evals/worst_answers_eval.jsonl`` (deduped) and audits it;
+    ``mark_fixed`` audits only. A repeat action is refused with 409
+    (``error: "already recorded"``) instead of duplicating the entry.
+    Unknown action → 400; missing QA row → 404.
+    """
+    try:
+        result = record_worst_answer_action(db, qa_id, payload.action)
+    except ValueError as exc:
+        if str(exc).startswith("unknown action"):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if result.get("error"):
+        return JSONResponse(status_code=409, content=result)
+    return result

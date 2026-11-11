@@ -58,19 +58,19 @@ modular, verify with measured tests + a live smoke test.
 | M3 — Suppliers + Twin + Ranking | `app/suppliers/` (directory, evidence-only quality, MOQ/lead filters, **canonical** best-value formula, manual delivery location), `app/twin/` (DigitalTwin: landed cost, delivery date, cost + quality risk, what-if), `app/ranking.py` (rank_shortlist + twin what-if; imports the canonical formula). **Total landed cost** (this pass): goods + transport + taxes/fees with a per-supplier breakdown; transport is optional/manual (see §4). |
 | M4 — Buyer Agent + Email | `app/agents/` (LangGraph Planner → Finder → Buyer → Negotiator → **human approval gate** → Order → Chaser → InvoiceTracker; deterministic local runner without LangGraph), `app/email/` (MockSMTP default — writes `data/mock_mail/`, never sends real mail; transactional outbox, deterministic idempotency keys). |
 | M5 — Guardrails + Cache + Evals + LoRA | `app/guardrails/` (price cap, deadline, blocklist, never-pay, PII redaction, contact toggle), `app/cache/` (plan-aware semantic cache, Redis optional), `app/evals/` (73-pair generated eval set; runner measures retrieval top-1/top-3, groundedness, guardrail block rate), `app/lora/` (toy rank-2 intent adapter; train accuracy 1.0 on 12 synthetic examples). |
-| M6 — Observability / Accuracy | `app/observability.py` (`metrics_daily` rollup: groundedness, thumbs-up, cache hit rate, latency p50/p95 — measured only, NULL when no data). Fixed this pass: `compute_daily_metrics` returned detached ORM rows (DetachedInstanceError) — now flush → expunge → commit. |
+| M6 — Observability / Accuracy | `app/observability.py` (`metrics_daily` rollup — §13: now also retrieval top-1, guardrail block rate, ranking top-1, cost per job from eval runs / orders / events; takeoff MAPE stays NULL until corrected-vs-estimate pairs exist) + `GET /accuracy` + Worst Answers actions + full Accuracy tab in the UI (`frontend/accuracy.py`, `frontend/demo_data.py`). Measured only, NULL when no data. Fixed this pass: `compute_daily_metrics` returned detached ORM rows (DetachedInstanceError) — now flush → expunge → commit. |
 | M7 — Frontend | Streamlit, 7 tabs, chat-first Start (plan upload OR typed/photographed requirement in chat, then quantity + optional location + deadline + budget as follow-ups). Split this pass into `app.py` (screens), `helpers.py` (pure ranking/transport/twin/parsing, tested without Streamlit), `demo_data.py` (synthetic data). Live mode when the backend is up, labelled DEMO MODE otherwise. |
 
 ## 3. Test results (measured only)
 
-Command: `.venv/bin/python -m pytest tests/ -v` — **50 passed, 0 failed,
+Command: `.venv/bin/python -m pytest tests/ -v` — **63 passed, 0 failed,
 0 skipped** (3 warnings: LangChain deprecation, FastAPI `on_event`
 deprecation — pre-existing, not failures). Updated 2026-11-11 after the
-agent-identity / escalation / contact-sharing update (+6 tests, §12).
+Observability Dashboard UI update (§13, +13 tests).
 
 | File | Tests | Covers |
 |---|---|---|
-| test_backend.py | 9 | health, requirement CRUD, ask (grounded + not-found), materials, approval pane ×2, simulate, confirm-refused, full draft→send→approve→confirm→invoice→records flow, reject |
+| test_backend.py | 11 | health, requirement CRUD, ask (grounded + not-found), materials, approval pane ×2, simulate, confirm-refused, full draft→send→approve→confirm→invoice→records flow, reject, **GET /accuracy (8 metrics, formula/source/n/target) + Worst Answers action round-trip (200 → 409 duplicate → 404 missing → 422 unknown action)** |
 | test_rag.py | 1 | retrieval top-1, not-found, cited answer |
 | test_vlm.py | 4 | scale detection, regions, title block, plan Q&A / not-found |
 | test_takeoff.py | 1 | takeoff maths, estimate labels, reconciliation, flagged lines |
@@ -82,12 +82,12 @@ agent-identity / escalation / contact-sharing update (+6 tests, §12).
 | test_lora.py | 1 | toy adapter train (≥ 0.9) + save/load round-trip |
 | test_guardrails.py | 1 | price cap, deadline, never-pay, PII redact/allow, clean allow |
 | test_email.py | 2 | mock send + idempotent duplicate, draft + outbox drain |
-| test_observability.py | 3 | rate NULLs, empty-day NULLs, measured groundedness 0.5 |
+| test_observability.py | 8 | rate NULLs, empty-day NULLs, measured groundedness 0.5, **METRIC_DEFS 8 unique, rollup populates retrieval/guardrail/ranking/cache/cost + takeoff NULL, empty dashboard all "no data", Worst Answers + PII-free raw events, Worst Answer action add-once-then-refuse** |
 | test_records.py | 2 | records CSV/JSON round-trip, invoice only when recorded |
-| test_frontend.py | 5 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A |
+| test_frontend.py | 11 | demo data, requirement parsing, frontend ranking formula, transport, demo Q&A, **frontend/backend METRIC_DEFS agreement, accuracy format/status never invents, Worst Answers actions + live-feedback merge, demo dashboard complete + honest (takeoff "no data", buyer-agent 1.0 with 0.58 agreement rate separate), live fetch returns None when backend down, real Streamlit AppTest render of the Accuracy tab** |
 | test_modularity.py | 3 | public interfaces, import map, no auto-location / no hard torch/faiss |
 | test_escalation.py | 6 | agent identity in draft (OFF/ON), send OFF hides contact end-to-end, send ON shares it, answerable question answered, unanswerable escalates → customer emailed → customer reply to supplier |
-| **Total** | **50** | |
+| **Total** | **63** | |
 
 Also: `.venv/bin/python tests/self_test.py` → **exit 0** (all 9 sections
 print measured results; evals 73 pairs, retrieval top-1/top-3 and
@@ -285,7 +285,72 @@ added to `requirements.txt`. Follow-up: `frontend/screens/` package
   (https://github.com/deepthivj-aiml/buildbuy-copilot) — push is the
   parent's next step (git auth is not set up in this VM).
 
-## 13. Exact next steps for the parent
+## 13. Observability Dashboard in the UI (user update 2026-11-10 20:17)
+
+The Accuracy tab (tab 6) was a partial placeholder — no 8-metric table,
+no alert thresholds on the trend charts, 3 Worst Answers with no
+per-row actions, no drill-down, no live wiring. It is now the full
+Observability Dashboard (plan §9, `docs/ARCHITECTURE.md` §10):
+
+- **Backend** (`app/observability.py`): `METRIC_DEFS` — the 8 separate
+  metrics with formula/source/target/direction (single source of truth;
+  the frontend mirrors it and a test fails if they drift).
+  `compute_daily_metrics` now also populates retrieval top-1,
+  guardrail block rate, ranking top-1, cache hit rate and cost per job
+  from eval runs / orders / events. Takeoff MAPE stays **NULL** —
+  material edits overwrite the quantity in place, so no
+  corrected-vs-estimate pair is recorded yet; the dashboard says "no
+  data yet" instead of inventing a number. `build_accuracy_dashboard(db,
+  days=30)` returns metrics + headline + trends + per-module + Worst
+  Answers (10 lowest) + Eval Run History + PII-free raw events +
+  alerts, with every count windowed to the requested days.
+  `record_worst_answer_action` appends to
+  `data/evals/worst_answers_eval.jsonl` (deduped by `qa_log_id`) and
+  audits; a repeat returns "already recorded".
+- **API** (`app/api/routes.py`): `GET /accuracy` → `AccuracyDashboardOut`
+  (new schemas in `app/schemas.py`, incl. `agreement_rate` on the
+  buyer-agent metric). `POST /accuracy/worst-answers/{qa_log_id}/action`
+  → 200 on success, **409** on a repeat action, 404 for a missing QA
+  row, 422 from the schema for an unknown action.
+- **Buyer-agent metric corrected**: its value is the
+  approval-before-order invariant (1.0 when every order has an APPROVED
+  `ApprovalRequest`, else < 1.0). The quotes-agreed rate is reported
+  alongside as `agreement_rate` — never blended in, so the metric can
+  never sit permanently in alert.
+- **Frontend** (`frontend/app.py` tab 6, pure helpers in new
+  `frontend/accuracy.py`, demo data in `frontend/demo_data.py`):
+  8-metric table (formula/source/n/target/status), 4 headline cards,
+  2 Altair trend charts with alert thresholds as dashed red rules
+  (groundedness 90%, retrieval top-1 85%, eval pass 90%, p95 latency
+  10 s; `st.line_chart` fallback when Altair is absent), per-module
+  table, Worst Answers with per-row "Add to eval set" / "Mark fixed"
+  (live mode POSTs to the backend; demo mode notes the action in
+  session state only), Eval Run History, drill-down to raw events by
+  step. Live mode (backend answers `/health`) fetches `GET /accuracy`
+  and shows a LIVE badge; demo mode shows labelled synthetic data with
+  a "Clear demo metrics" button that renders the empty state. Demo
+  thumbs-down feedback merges into the Worst Answers list.
+- **Verified live** (2026-11-11, temp SQLite DB, uvicorn :8001, mock
+  email): `GET /accuracy` on an empty DB returns all 8 metrics
+  `null` / `no_data`; the AppTest render of the tab shows the LIVE
+  badge + "No data yet" with no exception. After a real
+  requirement → 3 suppliers → simulate → draft → send (3 queued) →
+  approve → confirm flow, `GET /accuracy` reports buyer-agent
+  **1.0, n=1, status ok**, approval-before-order 1.0, no alerts; the
+  AppTest render shows the 8-metric table with Buyer-agent accuracy
+  **100.0% ✅ ok** and Takeoff estimate accuracy "no data yet".
+  Streamlit 1.67.0 + pandas + altair were installed into the project
+  `.venv` for this check (already in `requirements.txt`).
+- **Tests**: +13 (63 total, all passing; `self_test.py` exit 0). See §3.
+  New: `test_accuracy_tab_renders_in_streamlit` (real AppTest render,
+  skipped where Streamlit is not installed), live-fetch failure test,
+  frontend/backend `METRIC_DEFS` agreement test.
+- **Known limit (honest)**: Takeoff estimate accuracy cannot be
+  measured until material corrections are recorded as
+  corrected-vs-estimate pairs (today edits overwrite in place). The
+  dashboard shows "no data yet" for it — by design, not a bug.
+
+## 14. Exact next steps for the parent
 
 1. **Push to the GitHub repo** (repo already exists:
    https://github.com/deepthivj-aiml/buildbuy-copilot, public, empty):

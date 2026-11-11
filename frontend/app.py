@@ -38,6 +38,7 @@ from datetime import date, timedelta
 # sys.path bootstrap so `streamlit run frontend/app.py` finds them.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from demo_data import (  # noqa: E402
+    DEMO_ACCURACY,
     DEMO_COST_PER_JOB,
     DEMO_EVAL_PASS,
     DEMO_EVAL_RUNS,
@@ -46,9 +47,20 @@ from demo_data import (  # noqa: E402
     DEMO_MATERIALS,
     DEMO_METRICS_DAYS,
     DEMO_QA,
+    DEMO_RAW_EVENTS,
     DEMO_RETRIEVAL_TOP1,
     DEMO_SUPPLIERS,
     DEMO_WORST_ANSWERS,
+)
+from accuracy import (  # noqa: E402
+    ALERT_THRESHOLDS,
+    METRIC_DEFS,
+    apply_worst_action,
+    dashboard_is_empty,
+    fetch_live_accuracy,
+    format_value,
+    metric_status,
+    worst_answers_from_feedback,
 )
 from helpers import (  # noqa: E402
     API_URL,
@@ -841,13 +853,76 @@ elif nav == "5 · My Orders":
                "and date — it never generates them.")
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Tab 6 — Accuracy (observability dashboard)
 # ---------------------------------------------------------------------------
 elif nav == "6 · Accuracy":
     st.header("Accuracy — is the copilot getting better or worse?")
-    st.caption("All numbers here are measured from logged events, or labelled synthetic "
-               "demo data. Nothing is invented. If there is not enough data yet, the "
-               "dashboard says so instead of showing a made-up percentage.")
+    st.caption("Observability dashboard: 8 separate metrics, never blended "
+               "into one score — a problem in one module cannot hide behind "
+               "another. All numbers are measured from logged events, or "
+               "labelled synthetic demo data. If there is not enough data "
+               "yet, the dashboard says “no data yet” instead of showing a "
+               "made-up percentage.")
+    # Live data when the backend is up; labelled synthetic demo otherwise.
+    live_dash = fetch_live_accuracy() if LIVE else None
+    if LIVE and live_dash is not None:
+        dash = live_dash
+        st.markdown('<span class="badge badge-live">● LIVE — measured from '
+                    'metrics_daily + eval_runs + qa_log + observability_events'
+                    '</span>', unsafe_allow_html=True)
+        worst = dash.get("worst_answers", [])
+        trends = dash.get("trends", [])
+        eval_runs = dash.get("eval_runs", [])
+        raw_events = dash.get("raw_events", [])
+        per_module = dash.get("per_module", [])
+    else:
+        dash = DEMO_ACCURACY
+        if LIVE:
+            st.warning("Backend is up but /accuracy did not answer — showing "
+                       "labelled synthetic demo data instead of inventing "
+                       "live numbers.")
+        else:
+            st.caption("Source: synthetic demo metrics (labelled) — replace "
+                       "with measured values from `metrics_daily` / "
+                       "`eval_runs` when the backend is live.")
+        worst = worst_answers_from_feedback(
+            st.session_state["feedback"], DEMO_WORST_ANSWERS)
+        # Apply any demo Worst Answers actions taken this session.
+        for _qa, _act in st.session_state.get("worst_actions", {}).items():
+            worst = apply_worst_action(worst, _qa, _act)
+        trends = [{"date": d, "groundedness": g / 100, "retrieval_top1": r / 100,
+                   "eval_pass_rate": e / 100,
+                   "cost_per_job_usd": c, "latency_p95_ms": int(p * 1000),
+                   "cache_hit_rate": None}
+                  for d, g, r, e, c, p in zip(
+                      DEMO_METRICS_DAYS, DEMO_GROUNDEDNESS, DEMO_RETRIEVAL_TOP1,
+                      DEMO_EVAL_PASS, DEMO_COST_PER_JOB, DEMO_LATENCY_P95)]
+        eval_runs = DEMO_EVAL_RUNS
+        raw_events = DEMO_RAW_EVENTS
+        per_module = [
+            {"module": "Plan Q&A", "metric": "Groundedness",
+             "value": 0.96, "n": 48,
+             "worst": "2 ungrounded answers"},
+            {"module": "Retrieval (RAG)", "metric": "Retrieval top-1",
+             "value": 0.92, "n": 73,
+             "worst": "eval runs below the gate in Eval Run History"},
+            {"module": "Takeoff", "metric": "Mean error (MAPE)",
+             "value": None, "n": 0,
+             "worst": "no corrected lines recorded yet"},
+            {"module": "Supplier ranking", "metric": "Chosen-was-#1",
+             "value": 0.67, "n": 12,
+             "worst": "orders where the chosen supplier was not ranked #1"},
+            {"module": "Buyer agent", "metric": "Approval-before-order",
+             "value": 1.0, "n": 12, "worst": "none"},
+            {"module": "Guardrails", "metric": "Block rate",
+             "value": 1.0, "n": 16,
+             "worst": "adversarial items that were NOT blocked"},
+            {"module": "Cache / cost", "metric": "Cache hit rate",
+             "value": 0.61, "n": 48, "worst": "p95 ask latency 7,200 ms"},
+        ]
+    st.session_state.setdefault("worst_actions", {})
+
     if st.button("Clear demo metrics (show the empty state)"):
         st.session_state["metrics_cleared"] = True
         st.rerun()
@@ -859,84 +934,271 @@ elif nav == "6 · Accuracy":
         if st.button("Restore synthetic demo metrics"):
             st.session_state["metrics_cleared"] = False
             st.rerun()
+    elif dashboard_is_empty(dash):
+        st.info("No data yet — the backend has logged no answers, jobs, or eval runs "
+                "in this window. Every metric below shows “no data yet” until the "
+                "first answer, job, or eval run is recorded. Nothing here is invented.")
     else:
-        st.caption("Source: synthetic demo metrics (labelled) — replace with measured "
-                   "values from `metrics_daily` / `eval_runs` when the backend is live.")
-        thumbs = st.session_state["feedback"]
-        if thumbs:
-            up = sum(1 for f in thumbs if f["thumbs"] == "up")
-            thumbs_rate = f"{up / len(thumbs) * 100:.0f}% (n={len(thumbs)}, live feedback)"
-        else:
-            thumbs_rate = "88% (n=34, synthetic demo)"
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.markdown('<div class="metric-card"><div class="metric-num">96%</div>'
-                        'Groundedness (30d)<br><span class="small">▲ +1 vs prior 30d · '
-                        'n=48 answers · synthetic demo</span></div>', unsafe_allow_html=True)
-        with m2:
-            st.markdown('<div class="metric-card"><div class="metric-num">' +
-                        thumbs_rate.split(" (")[0] + '</div>👍 rate<br><span class="small">' +
-                        thumbs_rate.split(" (", 1)[1].rstrip(")") +
-                        '</span></div>', unsafe_allow_html=True)
-        with m3:
-            st.markdown('<div class="metric-card"><div class="metric-num">6.2%</div>'
-                        'Takeoff mean error<br><span class="small">n=21 corrected lines · '
-                        'synthetic demo</span></div>', unsafe_allow_html=True)
-        with m4:
-            st.markdown('<div class="metric-card"><div class="metric-num">$0.42</div>'
-                        'Cost per completed job<br><span class="small">n=12 jobs · '
-                        'synthetic demo</span></div>', unsafe_allow_html=True)
-        import pandas as pd
-        st.subheader("Trends — accuracy over time (30 days, synthetic demo)")
-        trend = pd.DataFrame({
-            "Day": DEMO_METRICS_DAYS,
-            "Groundedness %": DEMO_GROUNDEDNESS,
-            "Retrieval top-1 %": DEMO_RETRIEVAL_TOP1,
-            "Eval pass %": DEMO_EVAL_PASS,
-        }).set_index("Day")
-        st.line_chart(trend)
-        st.caption("Dashed alert thresholds (groundedness 90%, retrieval top-1 85%) are "
-                   "drawn in the live dashboard from `metrics_daily`; this demo chart "
-                   "shows the measured series only.")
-        st.subheader("Trends — cost and latency (synthetic demo)")
-        cost = pd.DataFrame({
-            "Day": DEMO_METRICS_DAYS,
-            "Cost per job ($)": DEMO_COST_PER_JOB,
-            "p95 ask latency (s)": DEMO_LATENCY_P95,
-        }).set_index("Day")
-        st.line_chart(cost)
-        st.subheader("Per-module breakdown")
-        modules = pd.DataFrame([
-            {"Module": "Plan Q&A", "Metric": "Groundedness 96% (n=48)",
-             "Trend": "▲ improving", "Worst in 7 days": "2 ungrounded answers"},
-            {"Module": "Takeoff", "Metric": "Mean error 6.2% (n=21)",
-             "Trend": "→ flat", "Worst in 7 days": "Plywood sheets, conf 0.58"},
-            {"Module": "Supplier ranking", "Metric": "Chosen-was-#1 67% (n=12)",
-             "Trend": "▲ improving", "Worst in 7 days": "Delta chosen over Bay Steel once"},
-            {"Module": "Buyer agent", "Metric": "Agreed/sent 58% · no-reply 25%",
-             "Trend": "→ flat", "Worst in 7 days": "East Bay Industrial — no reply"},
-            {"Module": "Guardrails", "Metric": "Block rate 100% on adversarial set",
-             "Trend": "→ flat", "Worst in 7 days": "None"},
-            {"Module": "Cache", "Metric": "Hit rate 61% · $ saved $3.10",
-             "Trend": "▲ improving", "Worst in 7 days": "—"},
-        ])
-        st.dataframe(modules, use_container_width=True, hide_index=True)
-        st.caption("All rows: synthetic demo data. No blended 0–100% accuracy score is "
-                   "shown — the metrics stay separate so a problem in one module cannot "
-                   "hide behind another.")
-        st.subheader("Worst Answers — the fix list (synthetic demo)")
-        worst = pd.DataFrame(DEMO_WORST_ANSWERS)
-        st.dataframe(worst, use_container_width=True, hide_index=True)
-        if st.button("Add selected worst answers to the eval set (demo)"):
-            st.success("Demo mode: noted locally. In live mode the labelled examples "
-                       "are added to the eval set for the next regression run.")
-        st.subheader("Eval Run History (synthetic demo)")
-        st.dataframe(pd.DataFrame(DEMO_EVAL_RUNS), use_container_width=True,
-                     hide_index=True)
-        st.caption("A failed eval run blocks the deploy via the CI regression gate. "
-                   "See docs/UAT.md for the manual checklist.")
+        # --- Alerts ------------------------------------------------------
+        for a in dash.get("alerts", []):
+            st.warning(f"⚠ Alert: **{a['metric']}** is {a['value']} — below its "
+                       f"alert threshold {a['threshold']}. See the metric table "
+                       "below for the formula and source.")
 
-# ---------------------------------------------------------------------------
+        # --- 1. The 8 metrics, each with formula / source / n / target --
+        st.subheader("The 8 metrics — separate, never blended")
+        st.caption("No single 0–100% accuracy score is shown anywhere. Each "
+                   "metric has its own formula, source, sample size (n) and "
+                   "proposed target. “no data yet” means not enough has been "
+                   "logged — never a made-up number.")
+        import pandas as pd
+        metric_rows = []
+        for m in dash["metrics"]:
+            extra = ""
+            if m["key"] == "buyer_agent" and m.get("agreement_rate") is not None:
+                extra = (f" Quotes agreed: {m['agreement_rate'] * 100:.0f}% "
+                         f"(shown separately, not blended into the invariant).")
+            if m["key"] == "thumbs_up_rate":
+                nf = next((x for x in dash["metrics"]
+                           if x["key"] == "groundedness"), None)
+                extra = " “Not found” answers are counted separately, not as wrong answers."
+            status_txt = {"ok": "✅ ok", "alert": "⚠ ALERT",
+                          "no_data": "— no data yet"}[m.get("status", "no_data")]
+            metric_rows.append({
+                "Metric": m["name"],
+                "Value": format_value(m.get("value"), m.get("unit", "rate")),
+                "n": m.get("n", 0),
+                "Formula": m["formula"] + extra,
+                "Source": m["source"],
+                "Target": m["target"],
+                "Status": status_txt,
+            })
+        st.dataframe(pd.DataFrame(metric_rows), use_container_width=True,
+                     hide_index=True)
+
+        # --- 2. Headline cards ------------------------------------------
+        st.subheader("Headline — the 4 numbers to glance at")
+        m1, m2, m3, m4 = st.columns(4)
+        heads = dash["headline"]
+        for col, h in zip((m1, m2, m3, m4), heads):
+            with col:
+                st.markdown(
+                    '<div class="metric-card"><div class="metric-num">' +
+                    format_value(h.get("value"), h.get("unit", "rate")) +
+                    '</div>' + h["label"] + '<br><span class="small">n=' +
+                    str(h.get("n", 0)) + '</span></div>',
+                    unsafe_allow_html=True)
+        st.caption("Headline cards are the same 4 metrics from the table "
+                   "above (groundedness, 👍 rate, takeoff error, cost per "
+                   "job) — a shortcut, not a different score.")
+
+        # --- 3. Trend charts, with dashed alert thresholds --------------
+        st.subheader("Trends — accuracy over time (30 days)")
+        st.caption("Dashed lines are the alert thresholds: groundedness 90%, "
+                   "retrieval top-1 85%, eval pass 90%. A series crossing "
+                   "below its dashed line triggers an alert (see above).")
+        if trends:
+            trend_df = pd.DataFrame([{
+                "Day": t["date"],
+                "Groundedness %": (None if t.get("groundedness") is None
+                                   else round(t["groundedness"] * 100, 1)),
+                "Retrieval top-1 %": (None if t.get("retrieval_top1") is None
+                                      else round(t["retrieval_top1"] * 100, 1)),
+                "Eval pass %": (None if t.get("eval_pass_rate") is None
+                                else round(t["eval_pass_rate"] * 100, 1)),
+            } for t in trends]).set_index("Day")
+            try:
+                import altair as alt
+                base = alt.Chart(trend_df.reset_index()).transform_fold(
+                    ["Groundedness %", "Retrieval top-1 %", "Eval pass %"],
+                    as_=["Metric", "Value"]).mark_line().encode(
+                    x="Day:N", y=alt.Y("Value:Q", scale=alt.Scale(domain=[0, 105])),
+                    color="Metric:N")
+                rules = alt.Chart(pd.DataFrame([
+                    {"Threshold": "Groundedness alert 90%", "Value": 90},
+                    {"Threshold": "Retrieval alert 85%", "Value": 85},
+                    {"Threshold": "Eval pass alert 90%", "Value": 90},
+                ])).mark_rule(strokeDash=[6, 4], color="red").encode(
+                    y="Value:Q", tooltip=["Threshold:N"])
+                st.altair_chart(base + rules, use_container_width=True)
+            except Exception:
+                st.line_chart(trend_df)
+                st.caption("Thresholds (dashed in the live chart): "
+                           "groundedness 90% · retrieval top-1 85% · "
+                           "eval pass 90%.")
+        else:
+            st.info("No trend data yet — trends appear after the first daily "
+                    "rollup (`python -m app.observability`).")
+        st.subheader("Trends — cost and latency")
+        st.caption("Dashed line: p95 ask latency alert at 10 s. Cost per job "
+                   "should fall as the cache hit rate rises.")
+        if trends:
+            cost_df = pd.DataFrame([{
+                "Day": t["date"],
+                "Cost per job ($)": t.get("cost_per_job_usd"),
+                "p95 ask latency (s)": (
+                    None if t.get("latency_p95_ms") is None
+                    else round(t["latency_p95_ms"] / 1000, 1)),
+            } for t in trends]).set_index("Day")
+            try:
+                import altair as alt
+                base = alt.Chart(cost_df.reset_index()).transform_fold(
+                    ["Cost per job ($)", "p95 ask latency (s)"],
+                    as_=["Metric", "Value"]).mark_line().encode(
+                    x="Day:N", y="Value:Q", color="Metric:N")
+                rule = alt.Chart(pd.DataFrame([
+                    {"Threshold": "p95 latency alert 10 s", "Value": 10},
+                ])).mark_rule(strokeDash=[6, 4], color="red").encode(
+                    y="Value:Q", tooltip=["Threshold:N"])
+                st.altair_chart(base + rule, use_container_width=True)
+            except Exception:
+                st.line_chart(cost_df)
+                st.caption("Threshold: p95 ask latency 10 s (dashed in the "
+                           "live chart).")
+        else:
+            st.info("No cost/latency trend yet.")
+
+        # --- 4. Per-module breakdown ------------------------------------
+        st.subheader("Per-module breakdown")
+        st.dataframe(pd.DataFrame([{
+            "Module": r["module"], "Metric": r["metric"],
+            "Value": format_value(r.get("value"), "rate"),
+            "n": r.get("n", 0), "Worst in 7 days": r.get("worst", ""),
+        } for r in per_module]), use_container_width=True, hide_index=True)
+        st.caption("One row per module. A module's worst item is named, not "
+                   "averaged away.")
+
+        # --- 5. Worst Answers (10 lowest) -------------------------------
+        st.subheader("Worst Answers — the fix list (10 lowest)")
+        st.caption("Lowest-scoring answers first: thumbs-down, then "
+                   "ungrounded. Each row has two actions — “Add to eval "
+                   "set” puts the labelled example into the regression set "
+                   "for the next eval run; “Mark fixed” records that the "
+                   "underlying problem is fixed. A row already acted on "
+                   "keeps its status and cannot be added twice.")
+        if not worst:
+            st.info("No worst answers yet — no thumbs-down or ungrounded "
+                    "answers have been logged.")
+        else:
+            for w in worst:
+                qid = w.get("qa_log_id")
+                with st.expander(
+                        f"{'👎' if (w.get('thumbs') or 0) < 0 else '❓'} "
+                        f"{w['question']} — {w.get('status', 'open')}"):
+                    st.write(f"**Answer:** {w.get('answer', '—')}")
+                    st.write(f"**Citations:** {w.get('citations') or '—'}")
+                    st.write(f"**Reason:** {w.get('reason', '—')}")
+                    st.write(f"**Grounded:** {w.get('grounded')} · "
+                             f"**Thumbs:** {w.get('thumbs', 0)}")
+                    if w.get("status") == "open":
+                        b1, b2 = st.columns(2)
+                        with b1:
+                            if st.button("➕ Add to eval set",
+                                         key=f"eval-{qid or w['question'][:20]}"):
+                                if LIVE and live_dash is not None and qid:
+                                    import urllib.request as _u
+                                    req = _u.Request(
+                                        API_URL + f"/accuracy/worst-answers/{qid}/action",
+                                        method="POST",
+                                        data=json.dumps(
+                                            {"action": "add_to_eval_set"}).encode(),
+                                        headers={"Content-Type": "application/json"})
+                                    try:
+                                        with _u.urlopen(req, timeout=5) as resp:
+                                            st.success("Added to the eval set "
+                                                       "(live backend).")
+                                    except Exception as exc:
+                                        st.error(f"Backend did not accept it: {exc}")
+                                else:
+                                    st.session_state.setdefault("worst_actions", {})[
+                                        qid or w["question"]] = "add_to_eval_set"
+                                    st.success("Demo mode: noted locally as "
+                                               "added to the eval set.")
+                                st.rerun()
+                        with b2:
+                            if st.button("✓ Mark fixed",
+                                         key=f"fix-{qid or w['question'][:20]}"):
+                                if LIVE and live_dash is not None and qid:
+                                    import urllib.request as _u
+                                    req = _u.Request(
+                                        API_URL + f"/accuracy/worst-answers/{qid}/action",
+                                        method="POST",
+                                        data=json.dumps(
+                                            {"action": "mark_fixed"}).encode(),
+                                        headers={"Content-Type": "application/json"})
+                                    try:
+                                        with _u.urlopen(req, timeout=5) as resp:
+                                            st.success("Marked fixed (live backend).")
+                                    except Exception as exc:
+                                        st.error(f"Backend did not accept it: {exc}")
+                                else:
+                                    st.session_state.setdefault("worst_actions", {})[
+                                        qid or w["question"]] = "mark_fixed"
+                                    st.success("Demo mode: noted locally as fixed.")
+                                st.rerun()
+                    else:
+                        st.caption(f"Status: **{w.get('status')}** — already "
+                                   "recorded, cannot be added twice.")
+
+        # --- 6. Eval Run History ----------------------------------------
+        st.subheader("Eval Run History")
+        st.caption("A failed eval run blocks the deploy via the CI "
+                   "regression gate. Pass = groundedness ≥ 90% and "
+                   "retrieval top-1 ≥ 85%.")
+        if eval_runs:
+            st.dataframe(pd.DataFrame([{
+                "Date": r.get("date", ""),
+                "Eval set": r.get("eval_set", ""),
+                "Groundedness": (format_value(r.get("groundedness"), "rate")
+                                 if isinstance(r.get("groundedness"), (int, float))
+                                 else r.get("groundedness", "—")),
+                "Retrieval top-1": (format_value(r.get("retrieval_top1"), "rate")
+                                    if isinstance(r.get("retrieval_top1"), (int, float))
+                                    else r.get("retrieval_top1", "—")),
+                "Guardrail block": (format_value(r.get("guardrail_block"), "rate")
+                                    if isinstance(r.get("guardrail_block"), (int, float))
+                                    else r.get("guardrail_block", r.get("guardrail_block_rate", "—"))),
+                "Cache hit": (format_value(r.get("cache_hit"), "rate")
+                              if isinstance(r.get("cache_hit"), (int, float))
+                              else r.get("cache_hit", r.get("cache_hit_rate", "—"))),
+                "Result": r.get("result", ""),
+            } for r in eval_runs]), use_container_width=True, hide_index=True)
+        else:
+            st.info("No eval runs yet.")
+
+        # --- 7. Drill-down: raw events ----------------------------------
+        st.subheader("Drill-down — raw events behind a metric")
+        st.caption("Pick a metric (or a request) and see the raw logged "
+                   "events: step, model, latency, grounded, cache hit, "
+                   "guardrail action, cost. Prompts, plan text and email "
+                   "bodies are never logged in full and never shown here — "
+                   "only PII-free fields.")
+        drill = st.selectbox(
+            "Drill into",
+            ["All steps", "ask", "retrieval", "takeoff", "guardrail",
+             "send_supplier_email", "twin_simulate"],
+            key="accuracy-drill")
+        events = [e for e in raw_events
+                  if drill == "All steps" or e.get("step") == drill]
+        if events:
+            st.dataframe(pd.DataFrame([{
+                "request_id": e.get("request_id", ""),
+                "Step": e.get("step", ""),
+                "Model": e.get("model", ""),
+                "Latency (ms)": e.get("latency_ms"),
+                "Grounded": e.get("grounded"),
+                "Cache hit": e.get("cache_hit"),
+                "Guardrail": e.get("guardrail_action", ""),
+                "Cost ($)": e.get("cost_usd", 0.0),
+                "When": e.get("created_at", ""),
+            } for e in events]), use_container_width=True, hide_index=True)
+        else:
+            st.info(f"No raw events for step “{drill}” yet.")
+        st.caption("Accuracy is a loop, not a report: evals → this dashboard "
+                   "→ Worst Answers / failing items → fix → re-run evals → "
+                   "the dashboard shows whether it improved. The dashboard "
+                   "never changes the product by itself.")
+
 # Tab 7 — Settings
 # ---------------------------------------------------------------------------
 elif nav == "7 · Settings":

@@ -378,13 +378,65 @@ Defined in the plan (§9): per-request structured JSON logs (`request_id`,
 step, model, tokens, latency, citations, grounded, cache_hit,
 guardrail_action, cost) with PII redacted before logging; daily rollup
 into `metrics_daily`; the Streamlit Accuracy tab reads `metrics_daily` +
-`eval_runs` + `qa_feedback`. Headline metrics: groundedness, retrieval
-top-1/top-3, thumbs-up rate + "not found" rate, takeoff mean absolute %
-error, chosen-was-#1 ranking rate, reply/negotiation/approval rates,
-guardrail block rate, cache hit rate + $ saved, latency p50/p95, cost per
-query / per job, eval pass rate. No blended single accuracy score. Alerts
+`eval_runs` + `qa_feedback`. No blended single accuracy score. Alerts
 are computed daily from `metrics_daily` (proposed thresholds in the plan,
 user-changeable in Settings). Prometheus/Grafana are Phase 2 only.
+
+### 10.1 The 8 metrics (separate, never blended)
+
+`app/observability.py::METRIC_DEFS` is the single source of truth; the
+frontend mirrors it in `frontend/accuracy.py::METRIC_DEFS`, and
+`tests/test_frontend.py::test_accuracy_metric_defs_agree_with_backend`
+fails if the two copies drift apart.
+
+| # | Metric (key) | Formula | Source | Target (alert below) |
+|---|---|---|---|---|
+| 1 | Groundedness (`groundedness`) | grounded answers ÷ all answers | `qa_log` (grounded flag) | ≥ 95% (< 90%) |
+| 2 | Retrieval accuracy (`retrieval_top1`) | RAG top-1 correct ÷ eval set (top-3 shown alongside) | `eval_runs` (fixed eval set) | top-1 ≥ 90% (< 85%) |
+| 3 | Answer accuracy (`thumbs_up_rate`) | 👍 ÷ (👍 + 👎); "not found" counted separately, never as a wrong answer | `qa_log` (thumbs) | ≥ 90% |
+| 4 | Takeoff estimate accuracy (`takeoff_mape`) | mean absolute % error vs user-corrected quantities | corrected takeoff lines — **NULL today**: edits overwrite the quantity in place, so no corrected-vs-estimate pair is recorded yet; the dashboard shows "no data yet" instead of inventing one | mean error ≤ 10% (> 20%) |
+| 5 | Supplier ranking accuracy (`ranking_top1_rate`) | chosen supplier was ranked #1 | `orders` joined to `shortlist` | ≥ 50% (< 40%) |
+| 6 | Buyer-agent accuracy (`buyer_agent`) | quotes agreed ÷ sent; **approval-before-order = 100%** (state-machine invariant) is the metric value; the agreement rate is shown separately, never blended in | `outbox` / `quotes` / `approval_requests` / `orders` | approval-before-order 100% |
+| 7 | Guardrail block rate (`guardrail_block_rate`) | blocked ÷ adversarial inputs; live false-positive rate tracked separately | `eval_runs` + `observability_events` | 100% on the adversarial set, FP < 5% |
+| 8 | Cost / cache / speed (`cost_cache_speed`) | cache hit rate, $ saved, latency p50/p95, cost per query / per job | `observability_events` | cache hit ≥ 50%, p95 ask latency < 10 s |
+
+### 10.2 What the tab shows
+
+`GET /accuracy` (`app/api/routes.py`) returns `AccuracyDashboardOut`:
+`metrics` (the 8, each with formula/source/n/target/status),
+`headline` (4 cards: groundedness, 👍 rate, takeoff error, cost per job
+— the same 4 metrics, not a different score), `trends` (30 days of
+`metrics_daily`), `per_module`, `worst_answers` (10 lowest:
+thumbs-down first, then ungrounded), `eval_runs`, `raw_events`
+(PII-free fields only: request_id, step, model, latency, grounded,
+cache hit, guardrail action, cost — no prompts, plan text or email
+bodies), `alerts`, `approval_before_order`. `build_accuracy_dashboard(db,
+days=30)` windows every count to the requested window. Empty metrics
+are `null` → the UI shows "no data yet".
+
+`POST /accuracy/worst-answers/{qa_log_id}/action` with
+`{"action": "add_to_eval_set" | "mark_fixed"}`: "add to eval set"
+appends the labelled QA pair to `data/evals/worst_answers_eval.jsonl`
+(deduped by `qa_log_id`) and writes an `AuditLog` entry; "mark fixed"
+audits only. A repeat action returns **409** (`error: "already
+recorded"`) — never a duplicate eval entry. Unknown action → 400 (or
+422 from the schema); missing QA row → 404.
+
+The tab (`frontend/app.py`, "6 · Accuracy", pure helpers in
+`frontend/accuracy.py`): live mode fetches `GET /accuracy` when the
+backend answers `/health` and shows a LIVE badge; otherwise it shows
+labelled synthetic demo data from `frontend/demo_data.py`
+(`DEMO_ACCURACY`, 10 Worst Answers, 10 raw events) with a "Clear demo
+metrics" button that renders the empty state. Trend charts are Altair
+with the alert thresholds as **dashed red rules** (groundedness 90%,
+retrieval top-1 85%, eval pass 90%, p95 latency 10 s), falling back to
+`st.line_chart` when Altair is not installed. Demo thumbs-down feedback
+is merged into the Worst Answers list and demo actions are noted in
+session state only — nothing is written to the eval set in demo mode.
+
+The loop is: evals → dashboard → Worst Answers / failing items → fix
+→ re-run evals → the dashboard shows whether it improved. The
+dashboard never changes the product by itself.
 
 ## 11. Security / guardrails
 
@@ -417,9 +469,9 @@ per-module rebuild/test commands: [`docs/MODULES.md`](MODULES.md).
 | 10 | Semantic cache | `app/cache/` | `SemanticCache`, `normalize` |
 | 11 | Evals | `app/evals/` | `generate_eval_pairs`, `run_eval`, `quality_check` |
 | 12 | LoRA | `app/lora/` | `ToyLoRA`, `INTENTS` |
-| 13 | Observability / Accuracy | `app/observability.py` | `compute_daily_metrics` |
+| 13 | Observability / Accuracy | `app/observability.py` | `METRIC_DEFS`, `compute_daily_metrics`, `build_accuracy_dashboard`, `record_worst_answer_action` (+ `GET /accuracy`, `POST /accuracy/worst-answers/{id}/action`) |
 | 14 | Records / summaries | `app/records/` | `build_records`, `build_export`, `to_csv`, `to_json` |
-| 15 | Frontend | `frontend/app.py`, `helpers.py`, `demo_data.py` | pure helpers tested without Streamlit (`tests/test_frontend.py`) |
+| 15 | Frontend | `frontend/app.py`, `helpers.py`, `demo_data.py`, `accuracy.py` | pure helpers tested without Streamlit (`tests/test_frontend.py`); Accuracy tab render-checked with Streamlit AppTest when Streamlit is installed |
 
 Rules enforced by `tests/test_modularity.py`:
 

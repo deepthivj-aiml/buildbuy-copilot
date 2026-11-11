@@ -15,6 +15,7 @@ venv/
 # committable, so do NOT ignore the whole data/ directory.
 data/mock_mail/
 data/exports/
+data/evals/worst_answers_eval.jsonl
 data/checkpoints.sqlite
 data/buildbuy.db
 data/contact_sharing.json
